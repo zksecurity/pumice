@@ -1,0 +1,8 @@
+[package]
+name = "pumice"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ark-ff = "0.4.2"
+ark-poly = "0.4.2"
