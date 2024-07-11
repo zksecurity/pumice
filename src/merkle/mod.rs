@@ -2,6 +2,7 @@ use std::{collections::VecDeque, marker::PhantomData};
 
 use ark_ff::Field;
 
+#[allow(dead_code)]
 pub struct MerkleTree<F: Field, H: Hasher<F>> {
     _ph: PhantomData<(F, H)>,
     #[allow(dead_code)]
@@ -10,6 +11,7 @@ pub struct MerkleTree<F: Field, H: Hasher<F>> {
 }
 
 impl<F: Field, H: Hasher<F>> MerkleTree<F, H> {
+    #[allow(dead_code)]
     pub fn new(levels: usize) -> Self {
         let leaves = 1 << levels;
         Self {
@@ -24,6 +26,7 @@ pub trait Hasher<F: Field> {
     type Output: Clone + Eq;
 
     // compress a list of internal nodes into a single internal node
+    #[allow(dead_code)]
     fn node(input: &[Self::Output]) -> Self::Output;
 
     // compress a list of leaves into a single leaf
@@ -43,6 +46,7 @@ impl<F: Field, H: Hasher<F>> MerkleTree<F, H> {
     /// # Returns
     ///
     /// Returns an error type for easier "monadic style" chaining.
+    #[allow(dead_code)]
     pub fn verify_decommitment(
         &self,
         comm: H::Output,
@@ -67,6 +71,7 @@ impl<F: Field, H: Hasher<F>> MerkleTree<F, H> {
     ///
     /// - `Some(root)`: the recomputed root of the decommitment
     /// - `None`: if the decommitment is invalid
+    #[allow(dead_code)]
     fn root_decommitment(
         &self,
         to_verify: &[(usize, H::Output)], // the positions to verify
