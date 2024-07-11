@@ -90,18 +90,17 @@ impl<F: Field, H: Hasher<F>> MerkleTree<F, H> {
                 ((ROOT_IDX, hash), None) => break Some(hash),
 
                 // merge the node with its sibling
-                ((idx, hash), Some((next_idx, next_hash))) if idx + 1 == next_idx => {
+                ((idx, hash), Some((nxt_idx, nxt_hash))) => {
                     // retrieve the sibling of the node
-                    let sibling_idx = idx ^ 1;
-                    let sibling = match next_idx == sibling_idx {
-                        true => next_hash,
+                    let sibl = match nxt_idx == idx ^ 1 {
+                        true => nxt_hash,
                         false => siblings.next()?,
                     };
 
                     // merge the node with its sibling
                     let nodes: [H::Output; 2] = match idx % 2 {
-                        0 => [hash, sibling],
-                        1 => [sibling, hash],
+                        0 => [hash, sibl],
+                        1 => [sibl, hash],
                         _ => unreachable!(),
                     };
 

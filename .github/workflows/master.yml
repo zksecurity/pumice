@@ -1,4 +1,11 @@
-on: ["push", "pull_request"]
+on:
+  push:
+    branches:
+      - master
+
+  pull_request:
+    branches:
+      - master
 
 jobs:
   build-and-test-linux:
@@ -26,7 +33,7 @@ jobs:
 
       - name: Build for wasm
         run: cargo build --target wasm32-unknown-unknown
-              
+
       - name: Build release
         run: cargo build --release
 

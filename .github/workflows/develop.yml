@@ -1,0 +1,57 @@
+on:
+  push:
+    branches:
+      - "!master"
+
+  pull_request:
+    branches:
+      - "!master"
+
+jobs:
+  build-and-test-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+
+      - name: Run cargo test
+        run: cargo test --all-features
+
+      - name: Run cargo build
+        run: cargo build --all
+
+      - name: Run cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: Build for wasm
+        run: cargo build --target wasm32-unknown-unknown
+
+      - name: Build release
+        run: cargo build --release
+
+  build-and-test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Run cargo test
+        run: cargo test --all-features
+
+      - name: Run cargo build
+        run: cargo build --all
+
+      - name: Run cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: Build release
+        run: cargo build --release
