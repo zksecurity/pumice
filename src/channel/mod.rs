@@ -24,9 +24,25 @@ impl Annotation {
     }
 
     fn add_annotation(&mut self, annotation: String) {
-        if self.annotations_enabled {
-            self.annotations.push(annotation);
+        assert!(
+            self.annotations_enabled(),
+            "Cannot add annotation when annotations are disabled."
+        );
+        if let Some(expected_annotations) = &self.expected_annotations {
+            let idx = self.annotations.len();
+            assert!(
+                idx < expected_annotations.len(),
+                "Expected annotations is too short."
+            );
+            let expected_annotation = &expected_annotations[idx];
+            assert!(
+                expected_annotation == &annotation,
+                "Annotation mismatch. Expected annotation: '{}'. Found: '{}'",
+                expected_annotation,
+                annotation
+            );
         }
+        self.annotations.push(annotation);
     }
 
     fn annotate_prover_to_verifier(&mut self, annotation: String, n_bytes: usize) {
@@ -42,6 +58,18 @@ impl Annotation {
 
     fn annotate_verifier_to_prover(&mut self, annotation: String) {
         self.add_annotation(format!("V->P: {}{}\n", self.annotation_prefix, annotation));
+    }
+
+    fn annotations_enabled(&self) -> bool {
+        self.annotations_enabled
+    }
+
+    fn extra_annotations_disabled(&self) -> bool {
+        !self.extra_annotations_enabled
+    }
+
+    fn get_annotations(&self) -> &Vec<String> {
+        &self.annotations
     }
 }
 
@@ -72,10 +100,24 @@ trait Channel {
     fn get_annotations_mut(&mut self) -> &mut Annotation;
 
     fn annotate_prover_to_verifier(&mut self, annotation: String, n_bytes: usize) {
-        self.get_annotations_mut().annotate_prover_to_verifier(annotation, n_bytes);
+        self.get_annotations_mut()
+            .annotate_prover_to_verifier(annotation, n_bytes);
     }
 
     fn annotate_verifier_to_prover(&mut self, annotation: String) {
-        self.get_annotations_mut().annotate_verifier_to_prover(annotation)
+        self.get_annotations_mut()
+            .annotate_verifier_to_prover(annotation)
+    }
+
+    fn annotations_enabled(&self) -> bool {
+        self.get_annotations().annotations_enabled()
+    }
+
+    fn extra_annotations_disabled(&self) -> bool {
+        self.get_annotations().extra_annotations_disabled()
+    }
+
+    fn add_annotation(&mut self, annotation: String) {
+        self.get_annotations_mut().add_annotation(annotation);
     }
 }
