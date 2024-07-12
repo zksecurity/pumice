@@ -18,6 +18,14 @@ trait Channel {
 
     fn random_field(&mut self) -> Self::Field;
 
+    /// Only relevant for non-interactive channels. Changes the channel seed to a "safer" seed.
+    /// 
+    /// This function guarantees that randomness fetched from the channel after calling this function
+    /// and before sending data from the prover to the channel, is "safe": A malicious
+    /// prover will have to perform 2^security_bits operations for each attempt to randomize the fetched
+    /// randomness.
+    /// 
+    /// Increases the amount of work a malicious prover needs to perform, in order to fake a proof.
     fn apply_proof_of_work(&mut self, security_bits: usize);
 
     fn begin_query_phase(&mut self);
@@ -31,10 +39,21 @@ trait Channel {
     fn get_annotations(&self) -> &Annotation;
     fn get_annotations_mut(&mut self) -> &mut Annotation;
 
-    fn enter_annotation_scope(&mut self, scope: String);
-    fn exit_annotation_scope(&mut self);
-    fn disable_annotations(&mut self);
-    fn disable_extra_annotations(&mut self);
+    fn enter_annotation_scope(&mut self, scope: String) {
+        self.get_annotations_mut().enter_annotation_scope(scope);
+    }
+
+    fn exit_annotation_scope(&mut self) {
+        self.get_annotations_mut().exit_annotation_scope();
+    }
+
+    fn disable_annotations(&mut self) {
+        self.get_annotations_mut().annotations_enabled = false;
+    }
+
+    fn disable_extra_annotations(&mut self) {
+        self.get_annotations_mut().extra_annotations_enabled = false;
+    }
 
     /// Sets a vector of expected annotations. The Channel will check that the annotations it
     /// generates, match the annotations in this vector. Usually, this vector is the annotations created
@@ -55,11 +74,11 @@ trait Channel {
     }
 
     fn annotations_enabled(&self) -> bool {
-        self.get_annotations().annotations_enabled()
+        self.get_annotations().annotations_enabled
     }
 
-    fn extra_annotations_disabled(&self) -> bool {
-        self.get_annotations().extra_annotations_disabled()
+    fn extra_annotations_enabled(&self) -> bool {
+        self.get_annotations().extra_annotations_enabled
     }
 
     fn add_annotation(&mut self, annotation: String) {

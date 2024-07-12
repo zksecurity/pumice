@@ -22,7 +22,7 @@ impl Annotation {
 
     pub fn add_annotation(&mut self, annotation: String) {
         assert!(
-            self.annotations_enabled(),
+            self.annotations_enabled,
             "Cannot add annotation when annotations are disabled."
         );
         if let Some(expected_annotations) = &self.expected_annotations {
@@ -57,16 +57,18 @@ impl Annotation {
         self.add_annotation(format!("V->P: {}{}\n", self.annotation_prefix, annotation));
     }
 
-    pub fn annotations_enabled(&self) -> bool {
-        self.annotations_enabled
-    }
-
-    pub fn extra_annotations_disabled(&self) -> bool {
-        !self.extra_annotations_enabled
-    }
-
     pub fn set_expected_annotations(&mut self, expected_annotations: Vec<String>) {
         self.expected_annotations = Some(expected_annotations);
+    }
+
+    pub fn enter_annotation_scope(&mut self, scope: String) {
+        self.scope.push(scope);
+        self.update_annotation_prefix();
+    }
+
+    pub fn exit_annotation_scope(&mut self) {
+        self.scope.pop();
+        self.update_annotation_prefix();
     }
 }
 
