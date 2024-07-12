@@ -1,7 +1,8 @@
 use std::fmt;
 
 #[derive(Default)]
-pub struct ChannelStatistics {
+pub struct ChannelStates {
+    pub is_query_phase: bool,
     pub byte_count: usize,
     pub hash_count: usize,
     pub commitment_count: usize,
@@ -9,7 +10,7 @@ pub struct ChannelStatistics {
     pub data_count: usize,
 }
 
-impl fmt::Display for ChannelStatistics {
+impl fmt::Display for ChannelStates {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,

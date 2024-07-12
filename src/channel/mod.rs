@@ -1,9 +1,10 @@
-pub mod annotation;
-pub mod channel_statistics;
+pub mod annotations;
+pub mod channel_states;
+pub mod verifier_channel;
 
-use annotation::Annotation;
+use annotations::Annotations;
 use ark_ff::Field;
-use channel_statistics::ChannelStatistics;
+use channel_states::ChannelStates;
 use std::fmt;
 
 #[allow(dead_code)]
@@ -26,18 +27,23 @@ trait Channel {
     /// randomness.
     /// 
     /// Increases the amount of work a malicious prover needs to perform, in order to fake a proof.
-    fn apply_proof_of_work(&mut self, security_bits: usize);
+    #[allow(unused_variables)]
+    fn apply_proof_of_work(&mut self, security_bits: usize) -> Option<()> {
+        None
+    }
 
-    fn begin_query_phase(&mut self);
+    fn begin_query_phase(&mut self) {
+        self.get_state_mut().is_query_phase = true;
+    }
 
     /// Channel statistics related methods
-    fn get_statistics(&self) -> &ChannelStatistics;
+    fn get_state(&self) -> &ChannelStates;
     /// XXX : dunno if this is the right approach
-    fn get_statistics_mut(&mut self) -> &mut ChannelStatistics;
+    fn get_state_mut(&mut self) -> &mut ChannelStates;
 
     /// Annotation related methods
-    fn get_annotations(&self) -> &Annotation;
-    fn get_annotations_mut(&mut self) -> &mut Annotation;
+    fn get_annotations(&self) -> &Annotations;
+    fn get_annotations_mut(&mut self) -> &mut Annotations;
 
     fn enter_annotation_scope(&mut self, scope: String) {
         self.get_annotations_mut().enter_annotation_scope(scope);
@@ -57,7 +63,7 @@ trait Channel {
 
     /// Sets a vector of expected annotations. The Channel will check that the annotations it
     /// generates, match the annotations in this vector. Usually, this vector is the annotations created
-    /// by the prover channel).
+    /// by the prover channel.
     fn set_expected_annotations(&mut self, expected_annotations: Vec<String>) {
         self.get_annotations_mut()
             .set_expected_annotations(expected_annotations);
@@ -94,7 +100,7 @@ impl<T: Channel> fmt::Display for ChannelWrapper<'_, T> {
         write!(f, "{}", self.0.get_annotations())?;
 
         writeln!(f, "\nProof Statistics:\n")?;
-        write!(f, "{}", self.0.get_statistics())?;
+        write!(f, "{}", self.0.get_state())?;
 
         Ok(())
     }

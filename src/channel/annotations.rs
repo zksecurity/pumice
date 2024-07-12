@@ -1,17 +1,18 @@
 use std::fmt;
 
 #[derive(Default)]
-pub struct Annotation {
+pub struct Annotations {
     pub scope: Vec<String>,
     pub annotations: Vec<String>,
     pub annotations_enabled: bool,
+    pub extra_annotations: Vec<String>,
     pub extra_annotations_enabled: bool,
     pub prover_to_verifier_bytes: usize,
     pub expected_annotations: Option<Vec<String>>,
     pub annotation_prefix: String,
 }
 
-impl Annotation {
+impl Annotations {
     pub fn update_annotation_prefix(&mut self) {
         self.annotation_prefix = self
             .scope
@@ -40,6 +41,15 @@ impl Annotation {
             );
         }
         self.annotations.push(annotation);
+    }
+
+    pub fn add_extra_annotation(&mut self, annotation: String) {
+        assert!(
+            self.extra_annotations_enabled,
+            "Cannot add extra annotation when extra annotations are disabled."
+        );
+        // XXX : why add prefix here, while add_annotation doesn't? XD
+        self.extra_annotations.push(format!("{}{}\n", self.annotation_prefix, annotation));
     }
 
     pub fn annotate_prover_to_verifier(&mut self, annotation: String, n_bytes: usize) {
@@ -72,9 +82,9 @@ impl Annotation {
     }
 }
 
-impl fmt::Display for Annotation {
+impl fmt::Display for Annotations {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        /// XXX : why omitting few bytes??
+        // XXX : why omitting few bytes??
         let title = &self.annotation_prefix[1..self.annotation_prefix.len() - 2];
         writeln!(f, "title {} Proof Protocol\n", title)?;
 
