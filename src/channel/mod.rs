@@ -1,77 +1,10 @@
+pub mod annotation;
+pub mod channel_statistics;
+
+use annotation::Annotation;
 use ark_ff::Field;
-
-#[derive(Default)]
-struct Annotation {
-    scope: Vec<String>,
-    annotations: Vec<String>,
-    annotations_enabled: bool,
-    extra_annotations_enabled: bool,
-    prover_to_verifier_bytes: usize,
-    expected_annotations: Option<Vec<String>>,
-    annotation_prefix: String,
-}
-
-impl Annotation {
-    /// Call this function every time that the annotation scope is updated to recalculate the prefix to
-    /// be added to annotations. It takes all annotation scopes in the annotation_scope_ vector and
-    /// concatenates them with "/" delimiters.
-    fn update_annotation_prefix(&mut self) {
-        self.annotation_prefix = self
-            .scope
-            .iter()
-            .fold(String::new(), |acc, s| acc + "/" + s)
-            + ": ";
-    }
-
-    fn add_annotation(&mut self, annotation: String) {
-        assert!(
-            self.annotations_enabled(),
-            "Cannot add annotation when annotations are disabled."
-        );
-        if let Some(expected_annotations) = &self.expected_annotations {
-            let idx = self.annotations.len();
-            assert!(
-                idx < expected_annotations.len(),
-                "Expected annotations is too short."
-            );
-            let expected_annotation = &expected_annotations[idx];
-            assert!(
-                expected_annotation == &annotation,
-                "Annotation mismatch. Expected annotation: '{}'. Found: '{}'",
-                expected_annotation,
-                annotation
-            );
-        }
-        self.annotations.push(annotation);
-    }
-
-    fn annotate_prover_to_verifier(&mut self, annotation: String, n_bytes: usize) {
-        let start = self.prover_to_verifier_bytes;
-        self.prover_to_verifier_bytes += n_bytes;
-        let end = self.prover_to_verifier_bytes;
-
-        self.add_annotation(format!(
-            "P->V[{}:{}]: {}{}\n",
-            start, end, self.annotation_prefix, annotation
-        ));
-    }
-
-    fn annotate_verifier_to_prover(&mut self, annotation: String) {
-        self.add_annotation(format!("V->P: {}{}\n", self.annotation_prefix, annotation));
-    }
-
-    fn annotations_enabled(&self) -> bool {
-        self.annotations_enabled
-    }
-
-    fn extra_annotations_disabled(&self) -> bool {
-        !self.extra_annotations_enabled
-    }
-
-    fn get_annotations(&self) -> &Vec<String> {
-        &self.annotations
-    }
-}
+use channel_statistics::ChannelStatistics;
+use std::fmt;
 
 #[allow(dead_code)]
 trait Channel {
@@ -89,15 +22,27 @@ trait Channel {
 
     fn begin_query_phase(&mut self);
 
+    /// Channel statistics related methods
+    fn get_statistics(&self) -> &ChannelStatistics;
+    /// XXX : dunno if this is the right approach
+    fn get_statistics_mut(&mut self) -> &mut ChannelStatistics;
+
+    /// Annotation related methods
+    fn get_annotations(&self) -> &Annotation;
+    fn get_annotations_mut(&mut self) -> &mut Annotation;
+
     fn enter_annotation_scope(&mut self, scope: String);
     fn exit_annotation_scope(&mut self);
     fn disable_annotations(&mut self);
     fn disable_extra_annotations(&mut self);
-    fn extra_annotations_disabled(&self) -> bool;
-    fn set_expected_annotations(&mut self, expected_annotations: Vec<String>);
 
-    fn get_annotations(&self) -> &Vec<String>;
-    fn get_annotations_mut(&mut self) -> &mut Annotation;
+    /// Sets a vector of expected annotations. The Channel will check that the annotations it
+    /// generates, match the annotations in this vector. Usually, this vector is the annotations created
+    /// by the prover channel).
+    fn set_expected_annotations(&mut self, expected_annotations: Vec<String>) {
+        self.get_annotations_mut()
+            .set_expected_annotations(expected_annotations);
+    }
 
     fn annotate_prover_to_verifier(&mut self, annotation: String, n_bytes: usize) {
         self.get_annotations_mut()
@@ -121,3 +66,28 @@ trait Channel {
         self.get_annotations_mut().add_annotation(annotation);
     }
 }
+
+/// XXX : Display methods needs to be refactored
+struct ChannelWrapper<'a, T: Channel>(&'a T);
+
+impl<T: Channel> fmt::Display for ChannelWrapper<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0.get_annotations())?;
+
+        writeln!(f, "\nProof Statistics:\n")?;
+        write!(f, "{}", self.0.get_statistics())?;
+
+        Ok(())
+    }
+}
+
+trait ChannelDisplay: Channel {
+    fn display(&self) -> ChannelWrapper<'_, Self>
+    where
+        Self: Sized,
+    {
+        ChannelWrapper(self)
+    }
+}
+
+impl<T: Channel> ChannelDisplay for T {}
