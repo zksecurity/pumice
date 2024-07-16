@@ -10,20 +10,6 @@ pub struct ChannelStates {
     pub data_count: usize,
 }
 
-impl ChannelStates {
-    pub fn increment_byte_count(&mut self, n: usize) {
-        self.byte_count += n;
-    }
-
-    pub fn increment_commitment_count(&mut self) {
-        self.commitment_count += 1;
-    }
-
-    pub fn increment_hash_count(&mut self) {
-        self.hash_count += 1;
-    }
-}
-
 impl fmt::Display for ChannelStates {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(

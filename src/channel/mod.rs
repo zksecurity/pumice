@@ -37,6 +37,18 @@ trait Channel: AsRef<ChannelStates> + AsMut<ChannelStates> {
     fn begin_query_phase(&mut self) {
         AsMut::<ChannelStates>::as_mut(self).is_query_phase = true;
     }
+
+    fn increment_byte_count(&mut self, n: usize) {
+        AsMut::<ChannelStates>::as_mut(self).byte_count += n;
+    }
+
+    fn increment_commitment_count(&mut self) {
+        AsMut::<ChannelStates>::as_mut(self).commitment_count += 1;
+    }
+
+    fn increment_hash_count(&mut self) {
+        AsMut::<ChannelStates>::as_mut(self).hash_count += 1;
+    }
 }
 
 trait VerifierChannel: Channel {
@@ -44,8 +56,8 @@ trait VerifierChannel: Channel {
         let bytes = self.recv_bytes(HashT::size())?;
         let mut hash = HashT::init_empty();
         hash.update(&bytes);
-        AsMut::<ChannelStates>::as_mut(self).increment_commitment_count();
-        AsMut::<ChannelStates>::as_mut(self).increment_hash_count();
+        self.increment_commitment_count();
+        self.increment_hash_count();
         Ok(hash)
     }
 }
@@ -57,8 +69,8 @@ trait ProverChannel: Channel {
 
     fn send_commit_hash<HashT: TempHashContainer>(&mut self, hash: HashT) -> Result<(), anyhow::Error> {
         self.send_bytes(hash.hash())?;
-        AsMut::<ChannelStates>::as_mut(self).increment_commitment_count();
-        AsMut::<ChannelStates>::as_mut(self).increment_hash_count();
+        self.increment_commitment_count();
+        self.increment_hash_count();
         Ok(())
     }
 }
