@@ -16,6 +16,10 @@ trait Channel: AsRef<ChannelStates> + AsMut<ChannelStates> {
 
     fn recv_bytes(&mut self, n: usize) -> Result<Vec<u8>, anyhow::Error>;
 
+    fn random_number(&mut self, bound: u64) -> u64;
+
+    fn random_field(&mut self) -> Self::Field;
+
     /// Only relevant for non-interactive channels. Changes the channel seed to a "safer" seed.
     ///
     /// This function guarantees that randomness fetched from the channel after calling this function
@@ -50,14 +54,14 @@ trait Channel: AsRef<ChannelStates> + AsMut<ChannelStates> {
     fn increment_hash_count(&mut self) {
         AsMut::<ChannelStates>::as_mut(self).hash_count += 1;
     }
+
+    fn increment_field_element_count(&mut self, n: usize) {
+        AsMut::<ChannelStates>::as_mut(self).field_element_count += n;
+    }
 }
 
 trait VerifierChannel: Channel {
     type HashT: TempHashContainer;
-
-    fn random_number(&mut self, bound: u64) -> u64;
-
-    fn random_field(&mut self) -> Self::Field;
 
     fn recv_commit_hash(&mut self) -> Result<Self::HashT, anyhow::Error> {
         let bytes = self.recv_bytes(Self::HashT::size())?;

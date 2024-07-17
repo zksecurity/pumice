@@ -51,26 +51,7 @@ impl<F: Field, H: TempHashContainer> Channel for FSVerifierChannel<F, H> {
         Ok(raw_bytes)
     }
 
-    fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
-        if security_bits == 0 {
-            return Ok(());
-        }
-
-        // TODO : apply proof of work
-        let prev_state = self.prng.clone();
-
-        Ok(())
-    }
-
-    fn is_end_of_proof(&self) -> bool {
-        self.proof_read_index >= self.proof.len()
-    }
-}
-
-// 
-impl<H: TempHashContainer, F: Field> VerifierChannel for FSVerifierChannel<F, H> {
-    type HashT = H;
-
+    // send random number to prover
     fn random_number(&mut self, upper_bound: u64) -> u64 {
         assert!(
             !self.is_query_phase(),
@@ -102,4 +83,24 @@ impl<H: TempHashContainer, F: Field> VerifierChannel for FSVerifierChannel<F, H>
 
         field_element
     }
+
+    fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
+        if security_bits == 0 {
+            return Ok(());
+        }
+
+        // TODO : apply proof of work
+        let prev_state = self.prng.clone();
+
+        Ok(())
+    }
+
+    fn is_end_of_proof(&self) -> bool {
+        self.proof_read_index >= self.proof.len()
+    }
+}
+
+// 
+impl<H: TempHashContainer, F: Field> VerifierChannel for FSVerifierChannel<F, H> {
+    type HashT = H;
 }
