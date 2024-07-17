@@ -8,27 +8,28 @@ use rand_chacha::ChaCha20Rng;
 
 use super::VerifierChannel;
 
-pub struct FSVerifierChannel<F: Field> {
+pub struct FSVerifierChannel<F: Field, H: TempHashContainer> {
     prng: ChaCha20Rng,
     proof: Vec<u8>,
     proof_read_index: usize,
     states: ChannelStates,
     _marker: std::marker::PhantomData<F>,
+    _marker2: std::marker::PhantomData<H>,
 }
 
-impl<F: Field> AsMut<ChannelStates> for FSVerifierChannel<F> {
+impl<F: Field, H: TempHashContainer> AsMut<ChannelStates> for FSVerifierChannel<F, H> {
     fn as_mut(&mut self) -> &mut ChannelStates {
         &mut self.states
     }
 }
 
-impl<F: Field> AsRef<ChannelStates> for FSVerifierChannel<F> {
+impl<F: Field, H: TempHashContainer> AsRef<ChannelStates> for FSVerifierChannel<F, H> {
     fn as_ref(&self) -> &ChannelStates {
         &self.states
     }
 }
 
-impl<F: Field> Channel for FSVerifierChannel<F> {
+impl<F: Field, H: TempHashContainer> Channel for FSVerifierChannel<F, H> {
     type Field = F;
 
     fn recv_felem(&mut self, felem: Self::Field) -> Result<Self::Field, anyhow::Error> {
@@ -98,7 +99,6 @@ impl<F: Field> Channel for FSVerifierChannel<F> {
 }
 
 // 
-impl<H: TempHashContainer, F: Field> VerifierChannel for FSVerifierChannel<F> {
+impl<H: TempHashContainer, F: Field> VerifierChannel for FSVerifierChannel<F, H> {
     type HashT = H;
-
 }
