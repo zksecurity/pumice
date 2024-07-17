@@ -1,5 +1,8 @@
 pub mod channel_states;
 
+pub mod fs_verifier_channel;
+pub mod fs_prover_channel;
+
 use ark_ff::Field;
 use channel_states::ChannelStates;
 use std::convert::{AsMut, AsRef};
@@ -9,7 +12,7 @@ use crate::hashutil::TempHashContainer;
 trait Channel: AsRef<ChannelStates> + AsMut<ChannelStates> {
     type Field: Field;
 
-    fn recv_felts(&mut self, n: usize) -> Result<Vec<Self::Field>, anyhow::Error>;
+    fn recv_felem(&mut self, felem: Self::Field) -> Result<Self::Field, anyhow::Error>;
 
     fn recv_bytes(&mut self, n: usize) -> Result<Vec<u8>, anyhow::Error>;
 
@@ -29,6 +32,8 @@ trait Channel: AsRef<ChannelStates> + AsMut<ChannelStates> {
     fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
         Err(anyhow::Error::msg("Not a fs-channel"))
     }
+
+    fn is_end_of_proof(&self) -> bool;
 
     fn is_query_phase(&self) -> bool {
         AsRef::<ChannelStates>::as_ref(self).is_query_phase
@@ -52,9 +57,11 @@ trait Channel: AsRef<ChannelStates> + AsMut<ChannelStates> {
 }
 
 trait VerifierChannel: Channel {
-    fn recv_commit_hash<HashT: TempHashContainer>(&mut self) -> Result<HashT, anyhow::Error> {
-        let bytes = self.recv_bytes(HashT::size())?;
-        let mut hash = HashT::init_empty();
+    type HashT: TempHashContainer;
+
+    fn recv_commit_hash(&mut self) -> Result<Self::HashT, anyhow::Error> {
+        let bytes = self.recv_bytes(Self::HashT::size())?;
+        let mut hash = Self::HashT::init_empty();
         hash.update(&bytes);
         self.increment_commitment_count();
         self.increment_hash_count();
@@ -63,11 +70,13 @@ trait VerifierChannel: Channel {
 }
 
 trait ProverChannel: Channel {
+    type HashT: TempHashContainer;
+
     fn send_felts(&mut self, felts: Vec<Self::Field>) -> Result<(), anyhow::Error>;
 
     fn send_bytes(&mut self, bytes: Vec<u8>) -> Result<(), anyhow::Error>;
 
-    fn send_commit_hash<HashT: TempHashContainer>(&mut self, hash: HashT) -> Result<(), anyhow::Error> {
+    fn send_commit_hash(&mut self, hash: Self::HashT) -> Result<(), anyhow::Error> {
         self.send_bytes(hash.hash())?;
         self.increment_commitment_count();
         self.increment_hash_count();

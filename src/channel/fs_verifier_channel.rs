@@ -1,18 +1,38 @@
-use crate::channel::VerifierChannel;
+use crate::channel::Channel;
+use crate::channel::ChannelStates;
+use crate::hashutil::TempHashContainer;
+use ark_ff::Field;
 
-pub struct FSVerifierChannel {
-    prng: Unique<SomeRng>,
-    proof: Vector<u8>,
+use rand_chacha::rand_core::RngCore;
+use rand_chacha::ChaCha20Rng;
+
+use super::VerifierChannel;
+
+pub struct FSVerifierChannel<F: Field> {
+    prng: ChaCha20Rng,
+    proof: Vec<u8>,
     proof_read_index: usize,
     states: ChannelStates,
+    _marker: std::marker::PhantomData<F>,
 }
 
-#[derive(Default)]
-impl FSVerifierChannel {}
+impl<F: Field> AsMut<ChannelStates> for FSVerifierChannel<F> {
+    fn as_mut(&mut self) -> &mut ChannelStates {
+        &mut self.states
+    }
+}
 
-impl VerifierChannel for FSVerifierChannel {
-    fn recv_felts(&mut self, n: usize) -> Result<Vec<Self::Field>, anyhow::Error> {
-        // TODO : get n felts from prng
+impl<F: Field> AsRef<ChannelStates> for FSVerifierChannel<F> {
+    fn as_ref(&self) -> &ChannelStates {
+        &self.states
+    }
+}
+
+impl<F: Field> Channel for FSVerifierChannel<F> {
+    type Field = F;
+
+    fn recv_felem(&mut self, felem: Self::Field) -> Result<Self::Field, anyhow::Error> {
+        Ok(felem)
     }
 
     fn recv_bytes(&mut self, n: usize) -> Result<Vec<u8>, anyhow::Error> {
@@ -26,7 +46,7 @@ impl VerifierChannel for FSVerifierChannel {
             // TODO : Mix seed with bytes
         }
         self.increment_byte_count(raw_bytes.len());
-        raw_bytes
+        Ok(raw_bytes)
     }
 
     fn random_number(&mut self, upper_bound: u64) -> u64 {
@@ -34,15 +54,31 @@ impl VerifierChannel for FSVerifierChannel {
             !self.is_query_phase(),
             "Verifier can't send randomness after query phase has begun."
         );
-        // TODO : get random number with prng
+
+        // TODO : change bytes size dynamically
+        let mut raw_bytes = [0u8; std::mem::size_of::<u64>()];
+        self.prng.fill_bytes(&mut raw_bytes);
+        let number = u64::from_le_bytes(raw_bytes);
+
+        assert!(
+            upper_bound < 0x0001_0000_0000_0000,
+            "Random number with too high an upper bound"
+        );
+
+        number % upper_bound
     }
 
-    fn random_field(&mut self, field: &Field) -> FieldElement {
+    fn random_field(&mut self) -> Self::Field {
         assert!(
             !self.is_query_phase(),
             "Verifier can't send randomness after query phase has begun."
         );
-        // TODO : get field random element with prng
+
+        let mut raw_bytes = [0u8; std::mem::size_of::<u64>()];
+        self.prng.fill_bytes(&mut raw_bytes);
+        let field_element = F::from_random_bytes(&raw_bytes).unwrap();
+
+        field_element
     }
 
     fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
@@ -51,9 +87,18 @@ impl VerifierChannel for FSVerifierChannel {
         }
 
         // TODO : apply proof of work
+        let prev_state = self.prng.clone();
+
+        Ok(())
     }
 
     fn is_end_of_proof(&self) -> bool {
         self.proof_read_index >= self.proof.len()
     }
+}
+
+// 
+impl<H: TempHashContainer, F: Field> VerifierChannel for FSVerifierChannel<F> {
+    type HashT = H;
+
 }
