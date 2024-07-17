@@ -2,6 +2,7 @@ use crate::channel::Channel;
 use crate::channel::ChannelStates;
 use crate::hashutil::TempHashContainer;
 use ark_ff::Field;
+use std::marker::PhantomData;
 
 use rand_chacha::rand_core::RngCore;
 use rand_chacha::ChaCha20Rng;
@@ -9,12 +10,11 @@ use rand_chacha::ChaCha20Rng;
 use super::VerifierChannel;
 
 pub struct FSVerifierChannel<F: Field, H: TempHashContainer> {
+    _ph: PhantomData<(F, H)>,
     prng: ChaCha20Rng,
     proof: Vec<u8>,
     proof_read_index: usize,
     states: ChannelStates,
-    _marker: std::marker::PhantomData<F>,
-    _marker2: std::marker::PhantomData<H>,
 }
 
 impl<F: Field, H: TempHashContainer> AsMut<ChannelStates> for FSVerifierChannel<F, H> {
@@ -33,6 +33,7 @@ impl<F: Field, H: TempHashContainer> Channel for FSVerifierChannel<F, H> {
     type Field = F;
 
     fn recv_felem(&mut self, felem: Self::Field) -> Result<Self::Field, anyhow::Error> {
+        // TODO
         Ok(felem)
     }
 
@@ -49,6 +50,26 @@ impl<F: Field, H: TempHashContainer> Channel for FSVerifierChannel<F, H> {
         self.increment_byte_count(raw_bytes.len());
         Ok(raw_bytes)
     }
+
+    fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
+        if security_bits == 0 {
+            return Ok(());
+        }
+
+        // TODO : apply proof of work
+        let prev_state = self.prng.clone();
+
+        Ok(())
+    }
+
+    fn is_end_of_proof(&self) -> bool {
+        self.proof_read_index >= self.proof.len()
+    }
+}
+
+// 
+impl<H: TempHashContainer, F: Field> VerifierChannel for FSVerifierChannel<F, H> {
+    type HashT = H;
 
     fn random_number(&mut self, upper_bound: u64) -> u64 {
         assert!(
@@ -81,24 +102,4 @@ impl<F: Field, H: TempHashContainer> Channel for FSVerifierChannel<F, H> {
 
         field_element
     }
-
-    fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
-        if security_bits == 0 {
-            return Ok(());
-        }
-
-        // TODO : apply proof of work
-        let prev_state = self.prng.clone();
-
-        Ok(())
-    }
-
-    fn is_end_of_proof(&self) -> bool {
-        self.proof_read_index >= self.proof.len()
-    }
-}
-
-// 
-impl<H: TempHashContainer, F: Field> VerifierChannel for FSVerifierChannel<F, H> {
-    type HashT = H;
 }
