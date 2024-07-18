@@ -1,4 +1,4 @@
-use crate::channel::{Channel, ChannelStates, ProverChannel}; // ProverChannel 추가
+use crate::channel::{Channel, ChannelStates, ProverChannel};
 use crate::hashutil::TempHashContainer;
 use ark_ff::Field;
 use std::marker::PhantomData;
@@ -7,10 +7,21 @@ use rand_chacha::rand_core::RngCore;
 use rand_chacha::ChaCha20Rng;
 
 pub struct FSProverChannel<F: Field, H: TempHashContainer> {
-    _ph: PhantomData<(F, H)>,
-    prng: ChaCha20Rng,
-    proof: Vec<u8>,
-    states: ChannelStates,
+    pub _ph: PhantomData<(F, H)>,
+    pub prng: ChaCha20Rng,
+    pub proof: Vec<u8>,
+    pub states: ChannelStates,
+}
+
+impl<F: Field, H: TempHashContainer> FSProverChannel<F, H> {
+    pub fn new(prng: ChaCha20Rng) -> Self {
+        Self {
+            _ph: PhantomData,
+            prng,
+            proof: vec![],
+            states: Default::default(),
+        }
+    }
 }
 
 impl<F: Field, H: TempHashContainer> AsMut<ChannelStates> for FSProverChannel<F, H> {
@@ -89,9 +100,9 @@ impl<H: TempHashContainer, F: Field> ProverChannel for FSProverChannel<F, H> {
 
     // TODO : 
     fn send_felts(&mut self, felts: Vec<Self::Field>) -> Result<(), anyhow::Error> {
-        for f in &felts {
-            self.proof.push();
-        }
+        // for f in &felts {
+        //     self.proof.push();
+        // }
 
         self.increment_field_element_count(felts.len());
         Ok(())

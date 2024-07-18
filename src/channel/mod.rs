@@ -1,7 +1,10 @@
-pub mod channel_states;
 
+pub mod channel_states;
 pub mod fs_verifier_channel;
 pub mod fs_prover_channel;
+
+#[cfg(test)]
+pub mod tests;
 
 use ark_ff::Field;
 use channel_states::ChannelStates;

@@ -1,5 +1,4 @@
-use crate::channel::Channel;
-use crate::channel::ChannelStates;
+use crate::channel::{Channel, ChannelStates, VerifierChannel};
 use crate::hashutil::TempHashContainer;
 use ark_ff::Field;
 use std::marker::PhantomData;
@@ -7,14 +6,24 @@ use std::marker::PhantomData;
 use rand_chacha::rand_core::RngCore;
 use rand_chacha::ChaCha20Rng;
 
-use super::VerifierChannel;
-
 pub struct FSVerifierChannel<F: Field, H: TempHashContainer> {
-    _ph: PhantomData<(F, H)>,
-    prng: ChaCha20Rng,
-    proof: Vec<u8>,
-    proof_read_index: usize,
-    states: ChannelStates,
+    pub _ph: PhantomData<(F, H)>,
+    pub prng: ChaCha20Rng,
+    pub proof: Vec<u8>,
+    pub proof_read_index: usize,
+    pub states: ChannelStates,
+}
+
+impl<F: Field, H: TempHashContainer> FSVerifierChannel<F, H> {
+    pub fn new(prng: ChaCha20Rng) -> Self {
+        Self {
+            _ph: PhantomData,
+            prng,
+            proof: vec![],
+            proof_read_index: 0,
+            states: Default::default(),
+        }
+    }
 }
 
 impl<F: Field, H: TempHashContainer> AsMut<ChannelStates> for FSVerifierChannel<F, H> {
