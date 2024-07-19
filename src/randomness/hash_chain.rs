@@ -24,15 +24,6 @@ impl Default for HashChain {
 }
 
 impl HashChain {
-    pub fn new_with_digest(digest: &[u8; KECCAK256_DIGEST_NUM_BYTES]) -> Self {
-        Self {
-            digest: *digest,
-            spare_bytes: [0u8; KECCAK256_DIGEST_NUM_BYTES * 2],
-            num_spare_bytes: 0,
-            counter: 0,
-        }
-    }
-
     pub fn new_with_public_input(public_input: &[u8]) -> Self {
         let mut hasher = Keccak256::new();
         hasher.update(public_input);
@@ -45,6 +36,17 @@ impl HashChain {
             num_spare_bytes: 0,
             counter: 0,
         }
+    }
+
+    pub fn reseed(&mut self, public_input: &[u8]) {
+        let mut hasher = Keccak256::new();
+        hasher.update(public_input);
+        let result = hasher.finalize();
+        let mut hash_bytes = [0u8; KECCAK256_DIGEST_NUM_BYTES];
+        hash_bytes.copy_from_slice(&result);
+        self.digest = hash_bytes;
+        self.num_spare_bytes = 0;
+        self.counter = 0;
     }
 
     pub fn random_bytes(&mut self, random_bytes_out: &mut [u8]) {
