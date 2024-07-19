@@ -59,14 +59,12 @@ impl HashChain {
             );
         }
 
-        // If there are any bytes left, copy them from the spare bytes, otherwise get more random bytes
         let num_tail_bytes = num_bytes % KECCAK256_DIGEST_NUM_BYTES;
         if num_tail_bytes <= self.num_spare_bytes {
             random_bytes_out[num_full_blocks * KECCAK256_DIGEST_NUM_BYTES..num_bytes]
                 .copy_from_slice(&self.spare_bytes[..num_tail_bytes]);
             self.num_spare_bytes -= num_tail_bytes;
 
-            // Shift the spare bytes to the left to remove the bytes we just copied
             self.spare_bytes.copy_within(num_tail_bytes.., 0);
         } else {
             self.fill_random_bytes(
@@ -103,9 +101,11 @@ impl HashChain {
         // TODO: below code is not efficient, but it works for now
         let mut bytes_with_counter = [0u8; KECCAK256_DIGEST_NUM_BYTES * 2];
         bytes_with_counter[..KECCAK256_DIGEST_NUM_BYTES].copy_from_slice(&self.digest);
+
         // Copy the counter's serialized 64bit onto the MSB end of the buffer (stone-prover PR #875 decision).
+        // Serialized counter is in big-endian format.
         bytes_with_counter[KECCAK256_DIGEST_NUM_BYTES * 2 - 8..]
-            .copy_from_slice(&self.counter.to_le_bytes());
+            .copy_from_slice(&self.counter.to_be_bytes());
 
         let mut hasher = Keccak256::new();
         hasher.update(bytes_with_counter);
@@ -204,22 +204,20 @@ mod tests {
             &bytes_1.to_vec()
         );
 
-        for i in 1..10 {
+        for _ in 1..1000 {
             hash_ch.random_bytes(&mut bytes_1);
-            dbg!(i);
-            dbg!(bytes_1);
         }
-        // assert_eq!(
-        //     EXPECTED_RANDOM_BYTES_KECCAK256_TEST.get(&1000).unwrap(),
-        //     &bytes_1.to_vec()
-        // );
+        assert_eq!(
+            EXPECTED_RANDOM_BYTES_KECCAK256_TEST.get(&1000).unwrap(),
+            &bytes_1.to_vec()
+        );
 
-        // hash_ch.update_hash_chain(&daba_daba_da_bytes);
-        // hash_ch.random_bytes(&mut bytes_1);
-        // assert_eq!(
-        //     EXPECTED_RANDOM_BYTES_KECCAK256_TEST.get(&1001).unwrap(),
-        //     &bytes_1.to_vec()
-        // );
+        hash_ch.update_hash_chain(&daba_daba_da_bytes);
+        hash_ch.random_bytes(&mut bytes_1);
+        assert_eq!(
+            EXPECTED_RANDOM_BYTES_KECCAK256_TEST.get(&1001).unwrap(),
+            &bytes_1.to_vec()
+        );
     }
 
     #[test]
