@@ -3,6 +3,7 @@ use std::vec::Vec;
 use crate::randomness::hash_chain::HashChain;
 use ark_ff::biginteger::BigInt;
 use ark_ff::BigInteger;
+use ark_ff::Field;
 
 pub struct Prng {
     hash_chain: HashChain,
@@ -79,6 +80,12 @@ impl Prng {
         return_vec
     }
 
+    // XXX : dumb implementation. should reduce calls to uniform_int_vec
+    pub fn uniform_bool_vec(&mut self, n_elements: usize) -> Vec<bool> {
+        let bits = self.uniform_int_vec(0, 1, n_elements);
+        bits.into_iter().map(|bit| bit != 0).collect()
+    }
+
     pub fn uniform_bigint<const N: usize>(&mut self, min: BigInt<N>, max: BigInt<N>) -> BigInt<N> {
         assert!(min <= max, "Invalid interval");
         let mut range = max.clone();
@@ -118,6 +125,14 @@ impl Prng {
         random_value    
     }
 
+    // Todo : 
+    pub fn random_felts_vec<F: Field>(&mut self, n_elements: usize) -> Vec<F> {
+        let mut return_vec = Vec::with_capacity(n_elements);
+        for _ in 0..n_elements {
+            return_vec.push(F::rand(&mut self.hash_chain));
+        }
+        return_vec
+    }
 }
 
 #[cfg(test)]
