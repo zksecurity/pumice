@@ -1,4 +1,3 @@
-
 // TODO : Find proper hash libaray
 // Digest? hashes
 pub trait TempHashContainer {

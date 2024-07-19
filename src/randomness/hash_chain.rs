@@ -221,7 +221,7 @@ mod tests {
     }
 
     #[test]
-    fn test_keccak256_hash_chain_init_update() {
+    fn test_hash_chain_init_update() {
         let hello_world = b"Hello World!";
         let hash_ch_1 = HashChain::new_with_public_input(hello_world);
         let hash_ch_2 = HashChain::default();
