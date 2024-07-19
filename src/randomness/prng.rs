@@ -44,6 +44,41 @@ impl Prng {
         return_vec
     }
 
+    // TODO : implement numeric generic version
+    pub fn uniform_int(&mut self, min: u64, max: u64) -> u64 {
+        assert!(min <= max, "Invalid interval");
+        let mut buf = [0u8; 8];
+        self.random_bytes(&mut buf);
+        let random_value = u64::from_le_bytes(buf);
+        min + (random_value % (max - min + 1))
+    }
+
+    pub fn uniform_int_vec(&mut self, min: u64, max: u64, n_elements: usize) -> Vec<u64> {
+        assert!(min <= max, "Invalid interval");
+        let mut return_vec = Vec::with_capacity(n_elements);
+        for _ in 0..n_elements {
+            return_vec.push(self.uniform_int(min, max));
+        }
+        return_vec
+    }
+    
+    pub fn uniform_distinct_int_vec(&mut self, min: u64, max: u64, n_elements: usize) -> Vec<u64> {
+        assert!(min <= max, "Invalid interval");
+        assert!(
+            n_elements <= ((max - min + 1) / 2) as usize,
+            "Number of elements must be less than or equal to half the number of elements in the interval"
+        );
+        let mut return_vec = Vec::with_capacity(n_elements);
+        let mut current_set = HashSet::new();
+        while current_set.len() < n_elements {
+            let value = self.uniform_int(min, max);
+            if current_set.insert(value) {
+                return_vec.push(value);
+            }
+        }
+        return_vec
+    }
+
     pub fn uniform_bigint<const N: usize>(&mut self, min: BigInt<N>, max: BigInt<N>) -> BigInt<N> {
         assert!(min <= max, "Invalid interval");
         let mut range = max.clone();
@@ -83,31 +118,6 @@ impl Prng {
         random_value    
     }
 
-    // pub fn uniform_int_vector(&mut self, min: u64, max: u64, n_elements: usize) -> Vec<u64> {
-    //     assert!(min <= max, "Invalid interval");
-    //     let mut return_vec = Vec::with_capacity(n_elements);
-    //     for _ in 0..n_elements {
-    //         return_vec.push(self.uniform_int(min, max));
-    //     }
-    //     return_vec
-    // }
-
-    // pub fn uniform_distinct_int_vector(&mut self, min: u64, max: u64, n_elements: usize) -> Vec<u64> {
-    //     assert!(min <= max, "Invalid interval");
-    //     assert!(
-    //         n_elements <= ((max - min + 1) / 2) as usize,
-    //         "Number of elements must be less than or equal to half the number of elements in the interval"
-    //     );
-    //     let mut return_vec = Vec::with_capacity(n_elements);
-    //     let mut current_set = HashSet::new();
-    //     while current_set.len() < n_elements {
-    //         let value = self.uniform_int(min, max);
-    //         if current_set.insert(value) {
-    //             return_vec.push(value);
-    //         }
-    //     }
-    //     return_vec
-    // }
 }
 
 #[cfg(test)]
