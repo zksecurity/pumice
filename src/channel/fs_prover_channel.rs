@@ -24,19 +24,6 @@ impl<F: Field, H: TempHashContainer> FSProverChannel<F, H> {
     }
 }
 
-impl<F: Field, H: TempHashContainer> AsMut<ChannelStates> for FSProverChannel<F, H> {
-    fn as_mut(&mut self) -> &mut ChannelStates {
-        &mut self.states
-    }
-}
-
-impl<F: Field, H: TempHashContainer> AsRef<ChannelStates> for FSProverChannel<F, H> {
-    fn as_ref(&self) -> &ChannelStates {
-        &self.states
-    }
-}
-
-
 impl<F: Field, H: TempHashContainer> Channel for FSProverChannel<F, H> {
     type Field = F;
 

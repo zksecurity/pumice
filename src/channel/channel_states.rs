@@ -10,6 +10,32 @@ pub struct ChannelStates {
     pub data_count: usize,
 }
 
+impl ChannelStates {
+    pub fn increment_byte_count(&mut self, n: usize) {
+        self.byte_count += n;
+    }
+
+    pub fn increment_commitment_count(&mut self) {
+        self.commitment_count += 1;
+    }
+
+    fn is_query_phase(&self) -> bool {
+        self.is_query_phase
+    }
+
+    fn begin_query_phase(&mut self) {
+        self.is_query_phase = true;
+    }
+
+    fn increment_hash_count(&mut self) {
+        self.hash_count += 1;
+    }
+
+    fn increment_field_element_count(&mut self, n: usize) {
+        self.field_element_count += n;
+    }
+}
+
 impl fmt::Display for ChannelStates {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
