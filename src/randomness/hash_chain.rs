@@ -147,11 +147,13 @@ mod tests {
 
         static ref EXPECTED_RANDOM_BYTE_VECTORS: std::collections::HashMap<usize, std::collections::HashMap<usize, Vec<u8>>> = {
             let mut m = std::collections::HashMap::new();
+            // TODO : not fully implemented yet
             m.insert(1,RANDOM_BYTES_KECCAK256.clone());
             m
         };
     }    
     
+    // TODO : not fully implemented yet
     #[test]
     fn test_hash_chain_get_randoms() {
         let mut bytes_1: [u8; 8] = [0u8; 8];
