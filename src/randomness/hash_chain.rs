@@ -24,9 +24,23 @@ impl Default for HashChain {
 }
 
 impl HashChain {
-    pub fn new(digest: &[u8; KECCAK256_DIGEST_NUM_BYTES]) -> Self {
+    pub fn new_with_digest(digest: &[u8; KECCAK256_DIGEST_NUM_BYTES]) -> Self {
         Self {
             digest: *digest,
+            spare_bytes: [0u8; KECCAK256_DIGEST_NUM_BYTES * 2],
+            num_spare_bytes: 0,
+            counter: 0,
+        }
+    }
+
+    pub fn new_with_public_input(public_input: &[u8]) -> Self {
+        let mut hasher = Keccak256::new();
+        hasher.update(public_input);
+        let result = hasher.finalize();
+        let mut hash_bytes = [0u8; KECCAK256_DIGEST_NUM_BYTES];
+        hash_bytes.copy_from_slice(&result);
+        Self {
+            digest: hash_bytes,
             spare_bytes: [0u8; KECCAK256_DIGEST_NUM_BYTES * 2],
             num_spare_bytes: 0,
             counter: 0,
@@ -132,35 +146,30 @@ impl HashChain {
 mod tests {
     use super::*;
 
-    const RANDOM_BYTES_1ST_KECCAK256: [u8; 8] = [0x07, 0x7C, 0xE2, 0x30, 0x83, 0x44, 0x67, 0xE7];
-    const RANDOM_BYTES_1000TH_KECCAK256: [u8; 8] = [0xD1, 0x74, 0x78, 0xD2, 0x31, 0xC2, 0xAF, 0x63];
-    const RANDOM_BYTES_1001ST_KECCAK256: [u8; 8] = [0xA0, 0xDA, 0xBD, 0x71, 0xEE, 0xAB, 0x82, 0xAC];
+    const RANDOM_BYTES_1ST_KECCAK256_TEST: [u8; 8] =
+        [0x07, 0x7C, 0xE2, 0x30, 0x83, 0x44, 0x67, 0xE7];
+    const RANDOM_BYTES_1000TH_KECCAK256_TEST: [u8; 8] =
+        [0xD1, 0x74, 0x78, 0xD2, 0x31, 0xC2, 0xAF, 0x63];
+    const RANDOM_BYTES_1001ST_KECCAK256_TEST: [u8; 8] =
+        [0xA0, 0xDA, 0xBD, 0x71, 0xEE, 0xAB, 0x82, 0xAC];
 
     lazy_static::lazy_static! {
-        static ref RANDOM_BYTES_KECCAK256: std::collections::HashMap<usize, Vec<u8>> = {
+        static ref EXPECTED_RANDOM_BYTES_KECCAK256_TEST: std::collections::HashMap<usize, Vec<u8>> = {
             let mut m = std::collections::HashMap::new();
-            m.insert(1, RANDOM_BYTES_1ST_KECCAK256.to_vec());
-            m.insert(1000, RANDOM_BYTES_1000TH_KECCAK256.to_vec());
-            m.insert(1001, RANDOM_BYTES_1001ST_KECCAK256.to_vec());
+            m.insert(1, RANDOM_BYTES_1ST_KECCAK256_TEST.to_vec());
+            m.insert(1000, RANDOM_BYTES_1000TH_KECCAK256_TEST.to_vec());
+            m.insert(1001, RANDOM_BYTES_1001ST_KECCAK256_TEST.to_vec());
             m
         };
+    }
 
-        static ref EXPECTED_RANDOM_BYTE_VECTORS: std::collections::HashMap<usize, std::collections::HashMap<usize, Vec<u8>>> = {
-            let mut m = std::collections::HashMap::new();
-            // TODO : not fully implemented yet
-            m.insert(1,RANDOM_BYTES_KECCAK256.clone());
-            m
-        };
-    }    
-    
     // TODO : not fully implemented yet
     #[test]
     fn test_hash_chain_get_randoms() {
-        let mut bytes_1: [u8; 8] = [0u8; 8];
+        let mut bytes_1 = [0u8; 8];
         let mut bytes_2 = [0u8; 8];
-
-        let mut hash_ch_1 = HashChain::new(&[0u8; 32]);
-        let mut hash_ch_2 = HashChain::new(&[0u8; 32]);
+        let mut hash_ch_1: HashChain = Default::default();
+        let mut hash_ch_2: HashChain = Default::default();
         let stat1 = hash_ch_1.get_hash_chain_state().clone();
         hash_ch_1.random_bytes(&mut bytes_1);
         hash_ch_2.random_bytes(&mut bytes_2);
@@ -175,4 +184,52 @@ mod tests {
         assert_eq!(bytes_1, bytes_2);
     }
 
+    #[test]
+    fn test_py_hash_chain_update_parity() {
+        let dead_beef_bytes = [0x00, 0x00, 0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF];
+        let daba_daba_da_bytes = [0x00, 0x00, 0x00, 0xDA, 0xBA, 0xDA, 0xBA, 0xDA];
+
+        let mut bytes_1 = [0u8; 8];
+        let mut hash_ch = HashChain::new_with_public_input(&dead_beef_bytes);
+
+        hash_ch.random_bytes(&mut bytes_1);
+        assert_eq!(
+            EXPECTED_RANDOM_BYTES_KECCAK256_TEST.get(&1).unwrap(),
+            &bytes_1.to_vec()
+        );
+
+        for _ in 1..1000 {
+            hash_ch.random_bytes(&mut bytes_1);
+        }
+        assert_eq!(
+            EXPECTED_RANDOM_BYTES_KECCAK256_TEST.get(&1000).unwrap(),
+            &bytes_1.to_vec()
+        );
+
+        hash_ch.update_hash_chain(&daba_daba_da_bytes);
+        hash_ch.random_bytes(&mut bytes_1);
+        assert_eq!(
+            EXPECTED_RANDOM_BYTES_KECCAK256_TEST.get(&1001).unwrap(),
+            &bytes_1.to_vec()
+        );
+    }
+
+    #[test]
+    fn test_keccak256_hash_chain_init_update() {
+        let hello_world = b"Hello World!";
+        let hash_ch_1 = HashChain::new_with_public_input(hello_world);
+        let hash_ch_2 = HashChain::default();
+
+        assert_ne!(
+            hash_ch_2.get_hash_chain_state(),
+            hash_ch_1.get_hash_chain_state()
+        );
+
+        let exp_hw_hash = [
+            0x3E, 0xA2, 0xF1, 0xD0, 0xAB, 0xF3, 0xFC, 0x66, 0xCF, 0x29, 0xEE, 0xBB, 0x70, 0xCB,
+            0xD4, 0xE7, 0xFE, 0x76, 0x2E, 0xF8, 0xA0, 0x9B, 0xCC, 0x06, 0xC8, 0xED, 0xF6, 0x41,
+            0x23, 0x0A, 0xFE, 0xC0,
+        ];
+        assert_eq!(exp_hw_hash, *hash_ch_1.get_hash_chain_state());
+    }
 }
