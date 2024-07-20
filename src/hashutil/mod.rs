@@ -1,5 +1,6 @@
 // TODO : Find proper hash libaray
 // Digest? hashes
+#[allow(dead_code)]
 pub trait TempHashContainer {
     fn init_empty() -> Self;
 

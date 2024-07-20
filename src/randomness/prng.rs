@@ -1,14 +1,15 @@
-use std::collections::HashSet;
-use std::vec::Vec;
 use crate::randomness::hash_chain::HashChain;
-use ark_ff::biginteger::BigInt;
 use ark_ff::BigInteger;
 use ark_ff::PrimeField;
+use std::collections::HashSet;
+use std::time::{SystemTime, UNIX_EPOCH};
+use std::vec::Vec;
 
 pub struct Prng {
     hash_chain: HashChain,
 }
 
+// TODO : Implement Rng trait
 impl Prng {
     pub fn new() -> Self {
         let initial_seed = vec![0u8; 32];
@@ -29,13 +30,14 @@ impl Prng {
     // OtherHashT RandomHash() {
     //   return OtherHashT::InitDigestTo(RandomByteVector(OtherHashT::kDigestNumBytes));
     // }
-  
+
     // pub fn random_other_hash
 
     pub fn mix_seed_with_bytes(&mut self, raw_bytes: &[u8]) {
         let seed_increment: u64 = 1;
 
-        self.hash_chain.mix_seed_with_bytes(raw_bytes, seed_increment);
+        self.hash_chain
+            .mix_seed_with_bytes(raw_bytes, seed_increment);
     }
 
     pub fn prng_state(&self) -> Vec<u8> {
@@ -52,13 +54,18 @@ impl Prng {
         return_vec
     }
 
-    // TODO : implement numeric generic version
+    // TODO : implement numeric generic version e.g u8, u16, i32
     pub fn uniform_int(&mut self, min: u64, max: u64) -> u64 {
         assert!(min <= max, "Invalid interval");
         let mut buf = [0u8; 8];
         self.random_bytes(&mut buf);
         let random_value = u64::from_le_bytes(buf);
-        min + (random_value % (max - min + 1))
+
+        if min == 0 && max == u64::MAX {
+            random_value
+        } else {
+            min + (random_value % (max - min + 1))
+        }
     }
 
     pub fn uniform_int_vec(&mut self, min: u64, max: u64, n_elements: usize) -> Vec<u64> {
@@ -69,11 +76,16 @@ impl Prng {
         }
         return_vec
     }
-    
+
     pub fn uniform_distinct_int_vec(&mut self, min: u64, max: u64, n_elements: usize) -> Vec<u64> {
         assert!(min <= max, "Invalid interval");
+        let n_elements_max = if max == min {
+            0
+        } else {
+            ((max - min - 1) / 2 + 1) as usize
+        };
         assert!(
-            n_elements <= ((max - min + 1) / 2) as usize,
+            n_elements <= n_elements_max,
             "Number of elements must be less than or equal to half the number of elements in the interval"
         );
         let mut return_vec = Vec::with_capacity(n_elements);
@@ -137,7 +149,7 @@ impl Prng {
     pub fn random_felts_vec<F: PrimeField>(&mut self, n_elements: usize) -> Vec<F> {
         let mut return_vec: Vec<F> = Vec::with_capacity(n_elements);
         let min = F::BigInt::from(0u64);
-        
+
         let mut max = F::MODULUS;
         max.sub_with_borrow(&F::BigInt::from(1u64));
         // or we can use F::MODULUS_MINUS_ONE_DIV_TWO * 2
@@ -148,22 +160,138 @@ impl Prng {
         }
         return_vec
     }
-}
 
+    pub fn seed_from_system_time() -> [u8; 8] {
+        let duration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+        let seed = duration.as_nanos() as u64;
+        seed.to_le_bytes()
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
     use ark_ff::biginteger::BigInt;
+    use std::collections::HashSet;
+
+    #[test]
+    fn test_two_invocations_are_not_identical() {
+        let mut prng = Prng::new();
+        let a = prng.uniform_int(0, u64::MAX);
+        let b = prng.uniform_int(0, u64::MAX);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_vector_invocation() {
+        let mut prng = Prng::new();
+        let v = prng.uniform_int_vec(0, u64::MAX, 10);
+        let w = prng.uniform_int_vec(0, u64::MAX, 10);
+
+        assert_eq!(v.len(), 10);
+        assert_eq!(w.len(), 10);
+        for i in 0..10 {
+            assert_ne!(v[i], w[i]);
+        }
+    }
+
+    #[test]
+    fn test_bool_vector() {
+        let mut prng = Prng::new();
+        let size = 1000;
+        let v = prng.uniform_bool_vec(size);
+        let w = prng.uniform_bool_vec(size);
+
+        assert_eq!(v.len(), size);
+        assert_eq!(w.len(), size);
+        assert_ne!(v, w);
+
+        let false_count_v = v.iter().filter(|&&x| !x).count();
+        let false_count_w = w.iter().filter(|&&x| !x).count();
+        assert!((false_count_v as f64 - size as f64 / 2.0).abs() < size as f64 / 10.0);
+        assert!((false_count_w as f64 - size as f64 / 2.0).abs() < size as f64 / 10.0);
+    }
+
+    #[test]
+    fn test_reseeding_with_same_seed_yields_same_randomness() {
+        let mut prng = Prng::new();
+        let size = 100;
+        let seed = [1, 2, 3, 4, 5];
+        prng.reseed(&seed);
+        let vals: Vec<u64> = (0..size).map(|_| prng.uniform_int(0, u64::MAX)).collect();
+        prng.reseed(&seed);
+        for val in vals {
+            let new_val = prng.uniform_int(0, u64::MAX);
+            assert_eq!(val, new_val);
+        }
+    }
+
+    #[test]
+    fn test_uniform_distinct_int_vector_assert() {
+        let mut prng = Prng::new();
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+            || prng.uniform_distinct_int_vec(0, 10, 6)
+        ))
+        .is_err());
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| prng
+                .uniform_distinct_int_vec(
+                    0,
+                    u16::MAX as u64,
+                    (u16::MAX as u64 / 2 + 2) as usize
+                )))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn test_uniform_distinct_int_vector_small() {
+        let mut prng = Prng::new();
+        let size_zero_vec = prng.uniform_distinct_int_vec(0, u64::MAX, 0);
+        assert_eq!(size_zero_vec.len(), 0);
+        let size_one_vec = prng.uniform_distinct_int_vec(0, u64::MAX, 1);
+        assert_eq!(size_one_vec.len(), 1);
+    }
+
+    #[test]
+    fn test_uniform_distinct_int_vector_unique() {
+        let mut prng = Prng::new();
+        for _ in 0..50 {
+            let mut vec = prng.uniform_distinct_int_vec(0, 30, 10);
+            vec.sort();
+            let unique_vec: HashSet<_> = vec.iter().cloned().collect();
+            assert_eq!(vec.len(), unique_vec.len());
+        }
+    }
 
     #[test]
     fn test_uniform_bigint() {
         let mut prng = Prng::new();
-        let min = BigInt::<4>::from(10u64);
-        let max = BigInt::<4>::from(100u64);
+        type ValueType = BigInt<4>;
+        let sqrt_n_tries = 16;
+        let n_tries = sqrt_n_tries * sqrt_n_tries;
 
-        for _ in 0..1000 {
-            let result = prng.uniform_bigint(min.clone(), max.clone());
-            assert!(result >= min && result <= max, "Result out of bounds");
+        let range_a = ValueType::from(0u64);
+        let range_b = ValueType::from(u64::MAX);
+        let mut mid = range_b.clone();
+        mid.div2();
+
+        let mut count = 0;
+
+        assert_eq!(
+            prng.uniform_bigint(range_a.clone(), range_a.clone()),
+            range_a
+        );
+        assert_eq!(
+            prng.uniform_bigint(range_b.clone(), range_b.clone()),
+            range_b
+        );
+
+        for _ in 0..n_tries {
+            if prng.uniform_bigint(range_a.clone(), range_b.clone()) > mid {
+                count += 1;
+            }
         }
+
+        assert!((count as f64 - n_tries as f64 / 2.0).abs() < 5.0 * sqrt_n_tries as f64 / 2.0);
     }
 }
