@@ -3,7 +3,7 @@ use std::vec::Vec;
 use crate::randomness::hash_chain::HashChain;
 use ark_ff::biginteger::BigInt;
 use ark_ff::BigInteger;
-use ark_ff::Field;
+use ark_ff::PrimeField;
 
 pub struct Prng {
     hash_chain: HashChain,
@@ -24,6 +24,13 @@ impl Prng {
     pub fn random_bytes(&mut self, random_bytes_out: &mut [u8]) {
         self.hash_chain.random_bytes(random_bytes_out);
     }
+
+    // template <typename OtherHashT>
+    // OtherHashT RandomHash() {
+    //   return OtherHashT::InitDigestTo(RandomByteVector(OtherHashT::kDigestNumBytes));
+    // }
+  
+    // pub fn random_other_hash
 
     pub fn mix_seed_with_bytes(&mut self, raw_bytes: &[u8]) {
         let seed_increment: u64 = 1;
@@ -86,50 +93,58 @@ impl Prng {
         bits.into_iter().map(|bit| bit != 0).collect()
     }
 
-    pub fn uniform_bigint<const N: usize>(&mut self, min: BigInt<N>, max: BigInt<N>) -> BigInt<N> {
+    pub fn uniform_bigint<B: BigInteger>(&mut self, min: B, max: B) -> B {
         assert!(min <= max, "Invalid interval");
         let mut range = max.clone();
         range.sub_with_borrow(&min);
-        let mut random_value: BigInt<N>;
+        let mut random_value: B;
 
         let num_bits = range.num_bits() as usize;
-    
+
         loop {
-            let mut bytes = vec![0u8; N * 8]; // N * sizeof(u64)
+            let mut bytes = vec![0u8; B::NUM_LIMBS * 8]; // B::NUM_LIMBS * sizeof(u64)
             self.random_bytes(&mut bytes);
-    
+
             // Mask unnecessary bits
             let full_bytes = num_bits / 8;
             let remaining_bits = num_bits % 8;
-    
+
             if remaining_bits != 0 {
                 bytes[full_bytes] &= (1 << remaining_bits) - 1;
             }
             for i in (full_bytes + 1)..bytes.len() {
                 bytes[i] = 0;
             }
-    
-            // modify bytes to u64
-            let mut u64_bytes = vec![0u64; N];
-            for i in 0..N {
-                u64_bytes[i] = u64::from_le_bytes(bytes[i * 8..(i + 1) * 8].try_into().unwrap());
+
+            // modify bytes to bool array
+            let mut bits = Vec::with_capacity(B::NUM_LIMBS * 64);
+            for byte in &bytes {
+                for bit in 0..8 {
+                    bits.push((byte >> bit) & 1 == 1);
+                }
             }
-    
-            // then make it to BigInt (there's no such method as BigInt::from_bytes)
-            random_value = BigInt::new(u64_bytes.try_into().unwrap());
+
+            // then make it to BigInteger
+            random_value = B::from_bits_le(&bits);
             if random_value <= range {
                 break;
             }
         }
         random_value.add_with_carry(&min);
-        random_value    
+        random_value
     }
 
-    // Todo : 
-    pub fn random_felts_vec<F: Field>(&mut self, n_elements: usize) -> Vec<F> {
-        let mut return_vec = Vec::with_capacity(n_elements);
+    pub fn random_felts_vec<F: PrimeField>(&mut self, n_elements: usize) -> Vec<F> {
+        let mut return_vec: Vec<F> = Vec::with_capacity(n_elements);
+        let min = F::BigInt::from(0u64);
+        
+        let mut max = F::MODULUS;
+        max.sub_with_borrow(&F::BigInt::from(1u64));
+        // or we can use F::MODULUS_MINUS_ONE_DIV_TWO * 2
+
         for _ in 0..n_elements {
-            return_vec.push(F::rand(&mut self.hash_chain));
+            let value = self.uniform_bigint(min, max);
+            return_vec.push(F::from_bigint(value).unwrap());
         }
         return_vec
     }
