@@ -13,8 +13,3 @@ criterion = "0.5.1"
 [[bench]]
 name = "poseidon"
 harness = false
-
-[build-dependencies]
-chumsky = "0.9.3"
-ark-ff.workspace = true
-felt = { path = "../felt" }
