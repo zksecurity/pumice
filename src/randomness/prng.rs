@@ -5,6 +5,8 @@ use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::vec::Vec;
 
+const INCREMENT_SEED: u64 = 1;
+
 pub trait Prng {
     fn new() -> Self;
     fn new_with_seed(seed: &[u8]) -> Self;
@@ -16,7 +18,8 @@ pub trait Prng {
     fn random_bytes_vec(&mut self, n_elements: usize) -> Vec<u8>;
 
     // TODO : implement numeric generic version e.g u8, u16, i32
-    fn uniform_int(&mut self, min: u64, max: u64) -> u64 {
+    fn uniform_int(&mut self, range: std::ops::RangeInclusive<u64>) -> u64 {
+        let (min, max) = (*range.start(), *range.end());
         assert!(min <= max, "Invalid interval");
         let mut buf = [0u8; 8];
         self.random_bytes(&mut buf);
@@ -29,26 +32,31 @@ pub trait Prng {
         }
     }
 
-    fn uniform_int_vec(&mut self, min: u64, max: u64, n_elements: usize) -> Vec<u64> {
-        assert!(min <= max, "Invalid interval");
+    fn uniform_int_vec(
+        &mut self,
+        range: std::ops::RangeInclusive<u64>,
+        n_elements: usize,
+    ) -> Vec<u64> {
+        assert!(range.start() <= range.end(), "Invalid interval");
         let mut return_vec = Vec::with_capacity(n_elements);
         for _ in 0..n_elements {
-            return_vec.push(self.uniform_int(min, max));
+            return_vec.push(self.uniform_int(range.clone()));
         }
         return_vec
     }
 
     fn uniform_distinct_int_vec(
         &mut self,
-        range: std::ops::Range<u64>,
+        range: std::ops::RangeInclusive<u64>,
         n_elements: usize,
     ) -> Vec<u64> {
-        assert!(range.start <= range.end, "Invalid interval");
-        let n_elements_max = if range.end == range.start {
+        assert!(range.start() <= range.end(), "Invalid interval");
+        let n_elements_max = if range.is_empty() {
             0
         } else {
-            ((range.end - range.start - 1) / 2 + 1) as usize
+            ((range.end() - range.start()) / 2) as usize
         };
+
         assert!(
             n_elements <= n_elements_max,
             "Number of elements must be less than or equal to half the number of elements in the interval"
@@ -56,7 +64,7 @@ pub trait Prng {
         let mut return_vec = Vec::with_capacity(n_elements);
         let mut current_set = HashSet::new();
         while current_set.len() < n_elements {
-            let value = self.uniform_int(range.start, range.end);
+            let value = self.uniform_int(range.clone());
             if current_set.insert(value) {
                 return_vec.push(value);
             }
@@ -66,7 +74,7 @@ pub trait Prng {
 
     // XXX : dumb implementation. should reduce calls to uniform_int_vec
     fn uniform_bool_vec(&mut self, n_elements: usize) -> Vec<bool> {
-        let bits = self.uniform_int_vec(0, 1, n_elements);
+        let bits = self.uniform_int_vec(0..=1, n_elements);
         bits.into_iter().map(|bit| bit != 0).collect()
     }
 
@@ -106,10 +114,8 @@ impl Prng for PrngKeccak256 {
     // pub fn random_other_hash
 
     fn mix_seed_with_bytes(&mut self, raw_bytes: &[u8]) {
-        let seed_increment: u64 = 1;
-
         self.hash_chain
-            .mix_seed_with_bytes(raw_bytes, seed_increment);
+            .mix_seed_with_bytes(raw_bytes, INCREMENT_SEED);
     }
 
     fn prng_state(&self) -> Vec<u8> {
@@ -198,16 +204,16 @@ mod tests {
     #[test]
     fn test_two_invocations_are_not_identical() {
         let mut prng = PrngKeccak256::new();
-        let a = prng.uniform_int(0, u64::MAX);
-        let b = prng.uniform_int(0, u64::MAX);
+        let a = prng.uniform_int(0..=u64::MAX);
+        let b = prng.uniform_int(0..=u64::MAX);
         assert_ne!(a, b);
     }
 
     #[test]
     fn test_vector_invocation() {
         let mut prng = PrngKeccak256::new();
-        let v = prng.uniform_int_vec(0, u64::MAX, 10);
-        let w = prng.uniform_int_vec(0, u64::MAX, 10);
+        let v = prng.uniform_int_vec(0..=u64::MAX, 10);
+        let w = prng.uniform_int_vec(0..=u64::MAX, 10);
 
         assert_eq!(v.len(), 10);
         assert_eq!(w.len(), 10);
@@ -238,10 +244,10 @@ mod tests {
         let size = 100;
         let seed = [1, 2, 3, 4, 5];
         let mut prng = PrngKeccak256::new_with_seed(&seed);
-        let vals: Vec<u64> = (0..size).map(|_| prng.uniform_int(0, u64::MAX)).collect();
+        let vals: Vec<u64> = (0..size).map(|_| prng.uniform_int(0..=u64::MAX)).collect();
         let mut prng2 = PrngKeccak256::new_with_seed(&seed);
         for val in vals {
-            let new_val = prng2.uniform_int(0, u64::MAX);
+            let new_val = prng2.uniform_int(0..=u64::MAX);
             assert_eq!(val, new_val);
         }
     }
@@ -250,13 +256,13 @@ mod tests {
     fn test_uniform_distinct_int_vector_assert() {
         let mut prng = PrngKeccak256::new();
         assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-            || prng.uniform_distinct_int_vec(0..10, 6)
+            || prng.uniform_distinct_int_vec(0..=10, 6)
         ))
         .is_err());
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| prng
                 .uniform_distinct_int_vec(
-                    0..u16::MAX as u64,
+                    0..=u16::MAX as u64,
                     (u16::MAX as u64 / 2 + 2) as usize
                 )))
             .is_err()
@@ -266,9 +272,9 @@ mod tests {
     #[test]
     fn test_uniform_distinct_int_vector_small() {
         let mut prng = PrngKeccak256::new();
-        let size_zero_vec = prng.uniform_distinct_int_vec(0..u64::MAX, 0);
+        let size_zero_vec = prng.uniform_distinct_int_vec(0..=u64::MAX, 0);
         assert_eq!(size_zero_vec.len(), 0);
-        let size_one_vec = prng.uniform_distinct_int_vec(0..u64::MAX, 1);
+        let size_one_vec = prng.uniform_distinct_int_vec(0..=u64::MAX, 1);
         assert_eq!(size_one_vec.len(), 1);
     }
 
@@ -276,7 +282,7 @@ mod tests {
     fn test_uniform_distinct_int_vector_unique() {
         let mut prng = PrngKeccak256::new();
         for _ in 0..50 {
-            let mut vec = prng.uniform_distinct_int_vec(0..30, 10);
+            let mut vec = prng.uniform_distinct_int_vec(0..=30, 10);
             vec.sort();
             let unique_vec: HashSet<_> = vec.iter().cloned().collect();
             assert_eq!(vec.len(), unique_vec.len());

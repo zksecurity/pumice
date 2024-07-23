@@ -1,6 +1,3 @@
-use std::ops::Add;
-
-use ethnum::U256;
 use sha3::{Digest, Keccak256};
 
 macro_rules! keccak256 {
@@ -57,29 +54,16 @@ impl HashChain {
     }
 
     pub fn random_bytes(&mut self, random_bytes_out: &mut [u8]) {
-        let num_bytes: usize = random_bytes_out.len();
-
-        let num_full_blocks = num_bytes / KECCAK256_DIGEST_NUM_BYTES;
-
-        for offset in
-            (0..num_full_blocks * KECCAK256_DIGEST_NUM_BYTES).step_by(KECCAK256_DIGEST_NUM_BYTES)
-        {
-            self.fill_random_bytes(
-                &mut random_bytes_out[offset..offset + KECCAK256_DIGEST_NUM_BYTES],
-            );
-        }
-
-        let num_tail_bytes = num_bytes % KECCAK256_DIGEST_NUM_BYTES;
-        if num_tail_bytes <= self.num_spare_bytes {
-            random_bytes_out[num_full_blocks * KECCAK256_DIGEST_NUM_BYTES..num_bytes]
-                .copy_from_slice(&self.spare_bytes[..num_tail_bytes]);
-            self.num_spare_bytes -= num_tail_bytes;
-
-            self.spare_bytes.copy_within(num_tail_bytes.., 0);
-        } else {
-            self.fill_random_bytes(
-                &mut random_bytes_out[num_full_blocks * KECCAK256_DIGEST_NUM_BYTES..num_bytes],
-            );
+        for chunk in random_bytes_out.chunks_mut(KECCAK256_DIGEST_NUM_BYTES) {
+            if chunk.len() <= self.num_spare_bytes {
+                // if there are enough spare bytes, use them
+                chunk.copy_from_slice(&self.spare_bytes[..chunk.len()]);
+                self.num_spare_bytes -= chunk.len();
+                self.spare_bytes.copy_within(chunk.len().., 0);
+            } else {
+                // otherwise, generate new random bytes
+                self.fill_random_bytes(chunk);
+            }
         }
     }
 
@@ -93,17 +77,20 @@ impl HashChain {
         let prandom_bytes = self.next_hash();
         out.copy_from_slice(&prandom_bytes[..num_bytes]);
 
-        assert!(
-            self.num_spare_bytes < KECCAK256_DIGEST_NUM_BYTES + num_bytes,
-            "Not enough room in spare bytes buffer. Have {} bytes and want to add {} bytes",
-            self.num_spare_bytes,
-            KECCAK256_DIGEST_NUM_BYTES - num_bytes
-        );
+        // if any bytes remain, put them into spare bytes
+        let remain_bytes = KECCAK256_DIGEST_NUM_BYTES - num_bytes;
+        if remain_bytes > 0 {
+            assert!(
+                self.num_spare_bytes < remain_bytes,
+                "Not enough room in spare bytes buffer. Have {} bytes and want to add {} bytes",
+                self.num_spare_bytes,
+                remain_bytes
+            );
 
-        self.spare_bytes
-            [self.num_spare_bytes..self.num_spare_bytes + (KECCAK256_DIGEST_NUM_BYTES - num_bytes)]
-            .copy_from_slice(&prandom_bytes[num_bytes..]);
-        self.num_spare_bytes += KECCAK256_DIGEST_NUM_BYTES - num_bytes;
+            self.spare_bytes[self.num_spare_bytes..self.num_spare_bytes + (remain_bytes)]
+                .copy_from_slice(&prandom_bytes[num_bytes..]);
+            self.num_spare_bytes += remain_bytes;
+        }
     }
 
     fn next_hash(&mut self) -> [u8; KECCAK256_DIGEST_NUM_BYTES] {
@@ -131,11 +118,22 @@ impl HashChain {
     }
 
     pub fn mix_seed_with_bytes(&mut self, raw_bytes: &[u8], seed_increment: u64) {
-        // Deserialize the current digest into a u64 array
-        let big_int = U256::from_be_bytes(self.digest).add(U256::from(seed_increment));
+        let mut big_int = [0u8; 32];
+        big_int.copy_from_slice(&self.digest);
+
+        let seed_increment_bytes = seed_increment.to_le_bytes();
+        let mut carry = 0u8;
+
+        for (i, byte) in seed_increment_bytes.iter().rev().enumerate() {
+            let idx = 31 - i;
+            let (sum, carry1) = big_int[idx].overflowing_add(*byte);
+            let (sum, carry2) = sum.overflowing_add(carry);
+            big_int[idx] = sum;
+            carry = (carry1 | carry2) as u8;
+        }
 
         // Hash the mixed_bytes to update the digest
-        let result = keccak256!(&big_int.to_be_bytes(), &raw_bytes);
+        let result = keccak256!(&big_int, &raw_bytes);
         self.digest.copy_from_slice(&result);
 
         self.num_spare_bytes = 0;
