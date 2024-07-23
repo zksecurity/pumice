@@ -3,6 +3,17 @@ use std::ops::Add;
 use ethnum::U256;
 use sha3::{Digest, Keccak256};
 
+macro_rules! keccak256 {
+    ( $($input:expr),* ) => {{
+        let mut hsh = Keccak256::new();
+        $(
+            hsh.update($input);
+        )*
+        let out: [u8; KECCAK256_DIGEST_NUM_BYTES] = hsh.finalize().into();
+        out
+    }};
+}
+
 const KECCAK256_DIGEST_NUM_BYTES: usize = 32;
 
 pub struct HashChain {
@@ -25,9 +36,7 @@ impl Default for HashChain {
 
 impl HashChain {
     pub fn new_with_public_input(public_input: &[u8]) -> Self {
-        let mut hasher = Keccak256::new();
-        hasher.update(public_input);
-        let result = hasher.finalize();
+        let result = keccak256!(public_input);
         let mut hash_bytes = [0u8; KECCAK256_DIGEST_NUM_BYTES];
         hash_bytes.copy_from_slice(&result);
         Self {
@@ -39,9 +48,7 @@ impl HashChain {
     }
 
     pub fn reseed(&mut self, public_input: &[u8]) {
-        let mut hasher = Keccak256::new();
-        hasher.update(public_input);
-        let result = hasher.finalize();
+        let result = keccak256!(public_input);
         let mut hash_bytes = [0u8; KECCAK256_DIGEST_NUM_BYTES];
         hash_bytes.copy_from_slice(&result);
         self.digest = hash_bytes;
@@ -50,7 +57,8 @@ impl HashChain {
     }
 
     pub fn random_bytes(&mut self, random_bytes_out: &mut [u8]) {
-        let num_bytes = random_bytes_out.len();
+        let num_bytes: usize = random_bytes_out.len();
+
         let num_full_blocks = num_bytes / KECCAK256_DIGEST_NUM_BYTES;
 
         for offset in
@@ -96,10 +104,9 @@ impl HashChain {
             [self.num_spare_bytes..self.num_spare_bytes + (KECCAK256_DIGEST_NUM_BYTES - num_bytes)]
             .copy_from_slice(&prandom_bytes[num_bytes..]);
         self.num_spare_bytes += KECCAK256_DIGEST_NUM_BYTES - num_bytes;
-        self.counter += 1;
     }
 
-    fn next_hash(&self) -> [u8; KECCAK256_DIGEST_NUM_BYTES] {
+    fn next_hash(&mut self) -> [u8; KECCAK256_DIGEST_NUM_BYTES] {
         // TODO: below code is not efficient, but it works for now
         let mut bytes_with_counter = [0u8; KECCAK256_DIGEST_NUM_BYTES * 2];
         bytes_with_counter[..KECCAK256_DIGEST_NUM_BYTES].copy_from_slice(&self.digest);
@@ -109,9 +116,10 @@ impl HashChain {
         bytes_with_counter[KECCAK256_DIGEST_NUM_BYTES * 2 - 8..]
             .copy_from_slice(&self.counter.to_be_bytes());
 
-        let mut hasher = Keccak256::new();
-        hasher.update(bytes_with_counter);
-        let result = hasher.finalize();
+        let result = keccak256!(&bytes_with_counter);
+
+        // increment counter
+        self.counter += 1;
         let mut hash_bytes = [0u8; KECCAK256_DIGEST_NUM_BYTES];
         hash_bytes.copy_from_slice(&result);
         hash_bytes
@@ -123,21 +131,11 @@ impl HashChain {
     }
 
     pub fn mix_seed_with_bytes(&mut self, raw_bytes: &[u8], seed_increment: u64) {
-        let mut mixed_bytes = vec![0u8; KECCAK256_DIGEST_NUM_BYTES + raw_bytes.len()];
-
         // Deserialize the current digest into a u64 array
         let big_int = U256::from_be_bytes(self.digest).add(U256::from(seed_increment));
 
-        // Serialize the incremented big_int back into the mixed_bytes
-        mixed_bytes[..KECCAK256_DIGEST_NUM_BYTES].copy_from_slice(&big_int.to_be_bytes());
-
-        // Copy the raw_bytes into the mixed_bytes
-        mixed_bytes[KECCAK256_DIGEST_NUM_BYTES..].copy_from_slice(raw_bytes);
-
         // Hash the mixed_bytes to update the digest
-        let mut hasher = Keccak256::new();
-        hasher.update(&mixed_bytes);
-        let result = hasher.finalize();
+        let result = keccak256!(&big_int.to_be_bytes(), &raw_bytes);
         self.digest.copy_from_slice(&result);
 
         self.num_spare_bytes = 0;

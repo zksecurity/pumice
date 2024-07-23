@@ -5,57 +5,18 @@ use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::vec::Vec;
 
-pub struct Prng {
-    hash_chain: HashChain,
-}
+pub trait Prng {
+    fn new() -> Self;
+    fn new_with_seed(seed: &[u8]) -> Self;
 
-// TODO : Implement Rng trait
-impl Prng {
-    pub fn new() -> Self {
-        let initial_seed = vec![0u8; 32];
-        Prng {
-            hash_chain: HashChain::new_with_public_input(&initial_seed),
-        }
-    }
-
-    pub fn reseed(&mut self, bytes: &[u8]) {
-        self.hash_chain.reseed(bytes);
-    }
-
-    pub fn random_bytes(&mut self, random_bytes_out: &mut [u8]) {
-        self.hash_chain.random_bytes(random_bytes_out);
-    }
-
-    // template <typename OtherHashT>
-    // OtherHashT RandomHash() {
-    //   return OtherHashT::InitDigestTo(RandomByteVector(OtherHashT::kDigestNumBytes));
-    // }
-
-    // pub fn random_other_hash
-
-    pub fn mix_seed_with_bytes(&mut self, raw_bytes: &[u8]) {
-        let seed_increment: u64 = 1;
-
-        self.hash_chain
-            .mix_seed_with_bytes(raw_bytes, seed_increment);
-    }
-
-    pub fn prng_state(&self) -> Vec<u8> {
-        self.hash_chain.get_hash_chain_state().to_vec()
-    }
-
-    pub fn hash_name() -> &'static str {
-        "Keccak256"
-    }
-
-    pub fn random_bytes_vec(&mut self, n_elements: usize) -> Vec<u8> {
-        let mut return_vec = vec![0u8; n_elements];
-        self.random_bytes(&mut return_vec);
-        return_vec
-    }
+    fn random_bytes(&mut self, random_bytes_out: &mut [u8]);
+    fn mix_seed_with_bytes(&mut self, raw_bytes: &[u8]);
+    fn prng_state(&self) -> Vec<u8>;
+    fn hash_name() -> &'static str;
+    fn random_bytes_vec(&mut self, n_elements: usize) -> Vec<u8>;
 
     // TODO : implement numeric generic version e.g u8, u16, i32
-    pub fn uniform_int(&mut self, min: u64, max: u64) -> u64 {
+    fn uniform_int(&mut self, min: u64, max: u64) -> u64 {
         assert!(min <= max, "Invalid interval");
         let mut buf = [0u8; 8];
         self.random_bytes(&mut buf);
@@ -68,7 +29,7 @@ impl Prng {
         }
     }
 
-    pub fn uniform_int_vec(&mut self, min: u64, max: u64, n_elements: usize) -> Vec<u64> {
+    fn uniform_int_vec(&mut self, min: u64, max: u64, n_elements: usize) -> Vec<u64> {
         assert!(min <= max, "Invalid interval");
         let mut return_vec = Vec::with_capacity(n_elements);
         for _ in 0..n_elements {
@@ -77,12 +38,16 @@ impl Prng {
         return_vec
     }
 
-    pub fn uniform_distinct_int_vec(&mut self, min: u64, max: u64, n_elements: usize) -> Vec<u64> {
-        assert!(min <= max, "Invalid interval");
-        let n_elements_max = if max == min {
+    fn uniform_distinct_int_vec(
+        &mut self,
+        range: std::ops::Range<u64>,
+        n_elements: usize,
+    ) -> Vec<u64> {
+        assert!(range.start <= range.end, "Invalid interval");
+        let n_elements_max = if range.end == range.start {
             0
         } else {
-            ((max - min - 1) / 2 + 1) as usize
+            ((range.end - range.start - 1) / 2 + 1) as usize
         };
         assert!(
             n_elements <= n_elements_max,
@@ -91,7 +56,7 @@ impl Prng {
         let mut return_vec = Vec::with_capacity(n_elements);
         let mut current_set = HashSet::new();
         while current_set.len() < n_elements {
-            let value = self.uniform_int(min, max);
+            let value = self.uniform_int(range.start, range.end);
             if current_set.insert(value) {
                 return_vec.push(value);
             }
@@ -100,12 +65,68 @@ impl Prng {
     }
 
     // XXX : dumb implementation. should reduce calls to uniform_int_vec
-    pub fn uniform_bool_vec(&mut self, n_elements: usize) -> Vec<bool> {
+    fn uniform_bool_vec(&mut self, n_elements: usize) -> Vec<bool> {
         let bits = self.uniform_int_vec(0, 1, n_elements);
         bits.into_iter().map(|bit| bit != 0).collect()
     }
 
-    pub fn uniform_bigint<B: BigInteger>(&mut self, min: B, max: B) -> B {
+    fn uniform_bigint<B: BigInteger>(&mut self, min: B, max: B) -> B;
+    fn random_felts_vec<F: PrimeField>(&mut self, n_elements: usize) -> Vec<F>;
+    fn seed_from_system_time() -> [u8; 8];
+}
+
+pub struct PrngKeccak256 {
+    hash_chain: HashChain,
+}
+
+// TODO : Implement Rng trait
+impl Prng for PrngKeccak256 {
+    fn new() -> Self {
+        let seed = [0u8; 32];
+        PrngKeccak256 {
+            hash_chain: HashChain::new_with_public_input(&seed),
+        }
+    }
+
+    fn new_with_seed(seed: &[u8]) -> Self {
+        PrngKeccak256 {
+            hash_chain: HashChain::new_with_public_input(&seed),
+        }
+    }
+
+    fn random_bytes(&mut self, random_bytes_out: &mut [u8]) {
+        self.hash_chain.random_bytes(random_bytes_out);
+    }
+
+    // template <typename OtherHashT>
+    // OtherHashT RandomHash() {
+    //   return OtherHashT::InitDigestTo(RandomByteVector(OtherHashT::kDigestNumBytes));
+    // }
+
+    // pub fn random_other_hash
+
+    fn mix_seed_with_bytes(&mut self, raw_bytes: &[u8]) {
+        let seed_increment: u64 = 1;
+
+        self.hash_chain
+            .mix_seed_with_bytes(raw_bytes, seed_increment);
+    }
+
+    fn prng_state(&self) -> Vec<u8> {
+        self.hash_chain.get_hash_chain_state().to_vec()
+    }
+
+    fn hash_name() -> &'static str {
+        "Keccak256"
+    }
+
+    fn random_bytes_vec(&mut self, n_elements: usize) -> Vec<u8> {
+        let mut return_vec = vec![0u8; n_elements];
+        self.random_bytes(&mut return_vec);
+        return_vec
+    }
+
+    fn uniform_bigint<B: BigInteger>(&mut self, min: B, max: B) -> B {
         assert!(min <= max, "Invalid interval");
         let mut range = max.clone();
         range.sub_with_borrow(&min);
@@ -114,12 +135,12 @@ impl Prng {
         let num_bits = range.num_bits() as usize;
 
         loop {
-            let mut bytes = vec![0u8; B::NUM_LIMBS * 8]; // B::NUM_LIMBS * sizeof(u64)
+            let mut bytes = vec![0u8; B::NUM_LIMBS * std::mem::size_of::<u64>()]; // B::NUM_LIMBS * sizeof(u64)
             self.random_bytes(&mut bytes);
 
             // Mask unnecessary bits
-            let full_bytes = num_bits / 8;
-            let remaining_bits = num_bits % 8;
+            let full_bytes = num_bits / std::mem::size_of::<u64>();
+            let remaining_bits = num_bits % std::mem::size_of::<u64>();
 
             if remaining_bits != 0 {
                 bytes[full_bytes] &= (1 << remaining_bits) - 1;
@@ -129,7 +150,7 @@ impl Prng {
             }
 
             // modify bytes to bool array
-            let mut bits = Vec::with_capacity(B::NUM_LIMBS * 64);
+            let mut bits = Vec::with_capacity(B::NUM_LIMBS * std::mem::size_of::<u64>() * 8);
             for byte in &bytes {
                 for bit in 0..8 {
                     bits.push((byte >> bit) & 1 == 1);
@@ -146,7 +167,7 @@ impl Prng {
         random_value
     }
 
-    pub fn random_felts_vec<F: PrimeField>(&mut self, n_elements: usize) -> Vec<F> {
+    fn random_felts_vec<F: PrimeField>(&mut self, n_elements: usize) -> Vec<F> {
         let mut return_vec: Vec<F> = Vec::with_capacity(n_elements);
         let min = F::BigInt::from(0u64);
 
@@ -161,12 +182,13 @@ impl Prng {
         return_vec
     }
 
-    pub fn seed_from_system_time() -> [u8; 8] {
+    fn seed_from_system_time() -> [u8; 8] {
         let duration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
         let seed = duration.as_nanos() as u64;
         seed.to_le_bytes()
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,7 +197,7 @@ mod tests {
 
     #[test]
     fn test_two_invocations_are_not_identical() {
-        let mut prng = Prng::new();
+        let mut prng = PrngKeccak256::new();
         let a = prng.uniform_int(0, u64::MAX);
         let b = prng.uniform_int(0, u64::MAX);
         assert_ne!(a, b);
@@ -183,7 +205,7 @@ mod tests {
 
     #[test]
     fn test_vector_invocation() {
-        let mut prng = Prng::new();
+        let mut prng = PrngKeccak256::new();
         let v = prng.uniform_int_vec(0, u64::MAX, 10);
         let w = prng.uniform_int_vec(0, u64::MAX, 10);
 
@@ -196,7 +218,7 @@ mod tests {
 
     #[test]
     fn test_bool_vector() {
-        let mut prng = Prng::new();
+        let mut prng = PrngKeccak256::new();
         let size = 1000;
         let v = prng.uniform_bool_vec(size);
         let w = prng.uniform_bool_vec(size);
@@ -213,30 +235,28 @@ mod tests {
 
     #[test]
     fn test_reseeding_with_same_seed_yields_same_randomness() {
-        let mut prng = Prng::new();
         let size = 100;
         let seed = [1, 2, 3, 4, 5];
-        prng.reseed(&seed);
+        let mut prng = PrngKeccak256::new_with_seed(&seed);
         let vals: Vec<u64> = (0..size).map(|_| prng.uniform_int(0, u64::MAX)).collect();
-        prng.reseed(&seed);
+        let mut prng2 = PrngKeccak256::new_with_seed(&seed);
         for val in vals {
-            let new_val = prng.uniform_int(0, u64::MAX);
+            let new_val = prng2.uniform_int(0, u64::MAX);
             assert_eq!(val, new_val);
         }
     }
 
     #[test]
     fn test_uniform_distinct_int_vector_assert() {
-        let mut prng = Prng::new();
+        let mut prng = PrngKeccak256::new();
         assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-            || prng.uniform_distinct_int_vec(0, 10, 6)
+            || prng.uniform_distinct_int_vec(0..10, 6)
         ))
         .is_err());
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| prng
                 .uniform_distinct_int_vec(
-                    0,
-                    u16::MAX as u64,
+                    0..u16::MAX as u64,
                     (u16::MAX as u64 / 2 + 2) as usize
                 )))
             .is_err()
@@ -245,18 +265,18 @@ mod tests {
 
     #[test]
     fn test_uniform_distinct_int_vector_small() {
-        let mut prng = Prng::new();
-        let size_zero_vec = prng.uniform_distinct_int_vec(0, u64::MAX, 0);
+        let mut prng = PrngKeccak256::new();
+        let size_zero_vec = prng.uniform_distinct_int_vec(0..u64::MAX, 0);
         assert_eq!(size_zero_vec.len(), 0);
-        let size_one_vec = prng.uniform_distinct_int_vec(0, u64::MAX, 1);
+        let size_one_vec = prng.uniform_distinct_int_vec(0..u64::MAX, 1);
         assert_eq!(size_one_vec.len(), 1);
     }
 
     #[test]
     fn test_uniform_distinct_int_vector_unique() {
-        let mut prng = Prng::new();
+        let mut prng = PrngKeccak256::new();
         for _ in 0..50 {
-            let mut vec = prng.uniform_distinct_int_vec(0, 30, 10);
+            let mut vec = prng.uniform_distinct_int_vec(0..30, 10);
             vec.sort();
             let unique_vec: HashSet<_> = vec.iter().cloned().collect();
             assert_eq!(vec.len(), unique_vec.len());
@@ -265,7 +285,7 @@ mod tests {
 
     #[test]
     fn test_uniform_bigint() {
-        let mut prng = Prng::new();
+        let mut prng = PrngKeccak256::new();
         type ValueType = BigInt<4>;
         let sqrt_n_tries = 16;
         let n_tries = sqrt_n_tries * sqrt_n_tries;
