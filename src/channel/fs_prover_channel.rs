@@ -1,10 +1,8 @@
-use crate::channel::{Channel, ChannelStates, ProverChannel};
+use crate::channel::{Channel, ChannelStates, FSChannel, ProverChannel};
 use crate::randomness::prng::Prng;
 use ark_ff::Field;
-use sha3::Digest;
+use sha3::digest::{Digest, Output};
 use std::marker::PhantomData;
-
-use super::FSChannel;
 
 pub struct FSProverChannel<F: Field, D: Digest, P: Prng> {
     pub _ph: PhantomData<(F, D)>,
@@ -78,28 +76,30 @@ impl<F: Field, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, P> {
     type Digest = D;
 
     fn send_felts(&mut self, felts: Vec<Self::Field>) -> Result<(), anyhow::Error> {
-        // for f in &felts {
-        //     self.proof.push();
+        // TODO : get the size of the field element in bytes
+        // let elem_size_in_bytes = 8;
+        // let mut bytes = vec![0u8; elem_size_in_bytes * felts.len()];
+        // for (i, f) in felts.iter().enumerate() {
+        //     f.to_big_endian(&mut bytes[i * elem_size_in_bytes..(i + 1) * elem_size_in_bytes]);
         // }
 
-        self.states.increment_field_element_count(felts.len());
         Ok(())
     }
 
-    fn send_bytes(&mut self, bytes: Vec<u8>) -> Result<(), anyhow::Error> {
-        for b in &bytes {
-            self.proof.push(*b);
-        }
+    fn send_bytes(&mut self, bytes: &[u8]) -> Result<(), anyhow::Error> {
+        self.proof.extend_from_slice(bytes);
 
         if !self.states.is_query_phase() {
-            let mut temp_bytes: Vec<u8> = bytes.clone();
-            self.prng.mix_seed_with_bytes(&mut temp_bytes);
+            self.prng.mix_seed_with_bytes(&bytes);
         }
 
         Ok(())
     }
 
-    fn send_commit_hash(&mut self, hash: Self::Digest) -> Result<(), anyhow::Error> {
+    fn send_commit_hash(&mut self, digest: Output<Self::Digest>) -> Result<(), anyhow::Error> {
+        self.send_bytes(digest.as_slice())?;
+        self.states.increment_commitment_count();
+        self.states.increment_hash_count();
         Ok(())
     }
 }
@@ -109,6 +109,7 @@ mod tests {
     use crate::channel::fs_prover_channel::{Channel, FSProverChannel};
     use crate::felt252::Felt252;
     use crate::randomness::prng::{Prng, PrngKeccak256};
+    use ark_ff::Zero;
     use sha3::Sha3_256;
 
     type MyFSProverChannel = FSProverChannel<Felt252, Sha3_256, PrngKeccak256>;
@@ -129,6 +130,7 @@ mod tests {
         let mut channel = MyFSProverChannel::new(prng);
 
         let felem = channel.draw_felem();
+        assert!(!felem.is_zero());
     }
 
     #[test]
@@ -139,8 +141,8 @@ mod tests {
         let n = 5;
         let felems = channel.draw_felems(n);
         assert_eq!(felems.len(), n);
-        // for felem in felems {
-        //     assert!(felem.is_valid());
-        // }
+        for felem in felems {
+            assert!(!felem.is_zero());
+        }
     }
 }

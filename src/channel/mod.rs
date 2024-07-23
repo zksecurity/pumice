@@ -1,10 +1,10 @@
 pub mod channel_states;
-//pub mod fs_verifier_channel;
 pub mod fs_prover_channel;
+pub mod fs_verifier_channel;
 
 use ark_ff::Field;
 use channel_states::ChannelStates;
-use sha3::Digest;
+use sha3::digest::{Digest, Output};
 
 #[allow(dead_code)]
 trait Channel {
@@ -15,7 +15,11 @@ trait Channel {
     fn draw_felem(&mut self) -> Self::Field;
 
     fn draw_felems(&mut self, n: usize) -> Vec<Self::Field> {
-        (0..n).map(|_| self.draw_felem()).collect()
+        let mut felems = Vec::with_capacity(n);
+        for _ in 0..n {
+            felems.push(self.draw_felem());
+        }
+        felems
     }
 
     fn draw_bytes(&mut self) -> [u8; std::mem::size_of::<u64>()];
@@ -34,15 +38,7 @@ trait VerifierChannel: Channel {
 
     fn recv_bytes(&mut self, n: usize) -> Result<Vec<u8>, anyhow::Error>;
 
-    fn recv_commit_hash(&mut self) -> Result<Self::Digest, anyhow::Error>;
-    //  {
-    //     let bytes = self.recv_bytes(Self::HashT::size())?;
-    //     let mut hash = Self::HashT::init_empty();
-    //     hash.update(&bytes);
-    //     self.increment_commitment_count();
-    //     self.increment_hash_count();
-    //     Ok(hash)
-    // }
+    fn recv_commit_hash(&mut self) -> Result<Output<Self::Digest>, anyhow::Error>;
 }
 
 trait ProverChannel: Channel {
@@ -50,13 +46,7 @@ trait ProverChannel: Channel {
 
     fn send_felts(&mut self, felts: Vec<Self::Field>) -> Result<(), anyhow::Error>;
 
-    fn send_bytes(&mut self, bytes: Vec<u8>) -> Result<(), anyhow::Error>;
+    fn send_bytes(&mut self, bytes: &[u8]) -> Result<(), anyhow::Error>;
 
-    fn send_commit_hash(&mut self, hash: Self::Digest) -> Result<(), anyhow::Error>;
-    //  {
-    //     self.send_bytes(hash.hash())?;
-    //     self.increment_commitment_count();
-    //     self.increment_hash_count();
-    //     Ok(())
-    // }
+    fn send_commit_hash(&mut self, digest: Output<Self::Digest>) -> Result<(), anyhow::Error>;
 }
