@@ -1,20 +1,20 @@
 use crate::channel::{Channel, ChannelStates, ProverChannel};
-use crate::randomness::prng::{Prng, PrngKeccak256};
+use crate::randomness::prng::Prng;
 use ark_ff::Field;
 use sha3::Digest;
 use std::marker::PhantomData;
 
 use super::FSChannel;
 
-pub struct FSProverChannel<F: Field, D: Digest> {
+pub struct FSProverChannel<F: Field, D: Digest, P: Prng> {
     pub _ph: PhantomData<(F, D)>,
-    pub prng: PrngKeccak256,
+    pub prng: P,
     pub proof: Vec<u8>,
     pub states: ChannelStates,
 }
 
-impl<F: Field, D: Digest> FSProverChannel<F, D> {
-    pub fn new(prng: PrngKeccak256) -> Self {
+impl<F: Field, D: Digest, P: Prng> FSProverChannel<F, D, P> {
+    pub fn new(prng: P) -> Self {
         Self {
             _ph: PhantomData,
             prng,
@@ -24,16 +24,18 @@ impl<F: Field, D: Digest> FSProverChannel<F, D> {
     }
 }
 
-impl<F: Field, D: Digest> Channel for FSProverChannel<F, D> {
+impl<F: Field, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
     type Field = F;
 
+    // draw a number from the PRNG [0, upper_bound)
     fn draw_number(&mut self, upper_bound: u64) -> u64 {
         assert!(
             !self.states.is_query_phase(),
             "Prover can't receive randomness after query phase has begun."
         );
 
-        // draw number from PRNG
+        let raw_bytes = self.draw_bytes();
+        let number = u64::from_le_bytes(raw_bytes);
 
         assert!(
             upper_bound < 0x0001_0000_0000_0000,
@@ -49,7 +51,8 @@ impl<F: Field, D: Digest> Channel for FSProverChannel<F, D> {
             "Prover can't receive randomness after query phase has begun."
         );
 
-        // draw felem from PRNG
+        let mut raw_bytes = self.draw_bytes();
+        let field_element = F::from_random_bytes(&mut raw_bytes).unwrap();
 
         field_element
     }
@@ -58,13 +61,13 @@ impl<F: Field, D: Digest> Channel for FSProverChannel<F, D> {
         let mut field_elements = Vec::with_capacity(n);
 
         for _ in 0..n {
-            let mut raw_bytes = self.draw_bytes();
-            field_elements.push(F::from_random_bytes(&mut raw_bytes).unwrap());
+            field_elements.push(self.draw_felem());
         }
 
         field_elements
     }
 
+    #[inline]
     fn draw_bytes(&mut self) -> [u8; std::mem::size_of::<u64>()] {
         let mut raw_bytes = [0u8; std::mem::size_of::<u64>()];
         self.prng.random_bytes(&mut raw_bytes);
@@ -72,7 +75,7 @@ impl<F: Field, D: Digest> Channel for FSProverChannel<F, D> {
     }
 }
 
-impl<F: Field, D: Digest> FSChannel for FSProverChannel<F, D> {
+impl<F: Field, D: Digest, P: Prng> FSChannel for FSProverChannel<F, D, P> {
     fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
         Ok(())
     }
@@ -82,7 +85,7 @@ impl<F: Field, D: Digest> FSChannel for FSProverChannel<F, D> {
     }
 }
 
-impl<F: Field, D: Digest> ProverChannel for FSProverChannel<F, D> {
+impl<F: Field, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, P> {
     type Digest = D;
 
     // TODO :

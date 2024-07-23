@@ -2,30 +2,6 @@ use crate::channel::fs_prover_channel::FSProverChannel;
 use crate::channel::ProverChannel;
 use crate::felt252::Felt252;
 use crate::hashutil::TempHashContainer;
-use rand_chacha::rand_core::SeedableRng;
-use rand_chacha::ChaCha20Rng;
-
-struct DummyHashContainer;
-
-impl TempHashContainer for DummyHashContainer {
-    fn init_empty() -> Self {
-        DummyHashContainer
-    }
-
-    fn init_digest(_data: &Vec<u8>) -> Self {
-        DummyHashContainer
-    }
-
-    fn update(&mut self, _data: &Vec<u8>) {}
-
-    fn hash(&self) -> Vec<u8> {
-        vec![]
-    }
-
-    fn size() -> usize {
-        0
-    }
-}
 
 #[test]
 fn test_send_bytes() {

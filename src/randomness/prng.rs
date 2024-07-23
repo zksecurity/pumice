@@ -16,7 +16,9 @@ pub trait Prng {
     fn prng_state(&self) -> Vec<u8>;
     fn hash_name() -> &'static str;
     fn random_bytes_vec(&mut self, n_elements: usize) -> Vec<u8>;
+}
 
+pub trait PrngOnlyForTest: Prng {
     // TODO : implement numeric generic version e.g u8, u16, i32
     fn uniform_int(&mut self, range: std::ops::RangeInclusive<u64>) -> u64 {
         let (min, max) = (*range.start(), *range.end());
@@ -131,7 +133,9 @@ impl Prng for PrngKeccak256 {
         self.random_bytes(&mut return_vec);
         return_vec
     }
+}
 
+impl PrngOnlyForTest for PrngKeccak256 {
     fn uniform_bigint<B: BigInteger>(&mut self, min: B, max: B) -> B {
         assert!(min <= max, "Invalid interval");
         let mut range = max.clone();

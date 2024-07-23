@@ -109,7 +109,7 @@ impl<F: Field, H: TempHashContainer> Channel for FSVerifierChannel<F, H> {
     }
 }
 
-// 
+//
 impl<H: TempHashContainer, F: Field> VerifierChannel for FSVerifierChannel<F, H> {
     type HashT = H;
 }
