@@ -2,12 +2,12 @@ use crate::channel::{Channel, ChannelStates, FSChannel, VerifierChannel};
 use crate::randomness::prng::Prng;
 use ark_ff::Field;
 use sha3::digest::{Digest, Output, OutputSizeUser};
-use std::io::Read;
 use std::marker::PhantomData;
 
 pub struct FSVerifierChannel<F: Field, D: Digest, P: Prng> {
     pub _ph: PhantomData<(F, D)>,
     pub prng: P,
+    // TODO : turn this into an iterator
     pub proof: Vec<u8>,
     pub proof_read_index: usize,
     pub states: ChannelStates,
@@ -85,9 +85,9 @@ impl<F: Field, D: Digest, P: Prng> FSChannel for FSVerifierChannel<F, D, P> {
 impl<F: Field, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F, D, P> {
     type Digest = D;
 
-    fn recv_felem(&mut self, felem: Self::Field) -> Result<Self::Field, anyhow::Error> {
+    fn recv_felts(&mut self, felts: Vec<Self::Field>) -> Result<Vec<Self::Field>, anyhow::Error> {
         // TODO
-        Ok(felem)
+        Ok(felts)
     }
 
     fn recv_bytes(&mut self, n: usize) -> Result<Vec<u8>, anyhow::Error> {

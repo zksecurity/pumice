@@ -34,7 +34,7 @@ trait FSChannel: Channel {
 trait VerifierChannel: Channel {
     type Digest: Digest;
 
-    fn recv_felem(&mut self, felem: Self::Field) -> Result<Self::Field, anyhow::Error>;
+    fn recv_felts(&mut self, felts: Vec<Self::Field>) -> Result<Vec<Self::Field>, anyhow::Error>;
 
     fn recv_bytes(&mut self, n: usize) -> Result<Vec<u8>, anyhow::Error>;
 
