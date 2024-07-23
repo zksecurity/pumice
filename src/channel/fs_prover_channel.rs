@@ -1,20 +1,20 @@
 use crate::channel::{Channel, ChannelStates, ProverChannel};
-use crate::hashutil::TempHashContainer;
+use crate::randomness::prng::{Prng, PrngKeccak256};
 use ark_ff::Field;
+use sha3::Digest;
 use std::marker::PhantomData;
 
-use rand_chacha::rand_core::RngCore;
-use rand_chacha::ChaCha20Rng;
+use super::FSChannel;
 
-pub struct FSProverChannel<F: Field, H: TempHashContainer> {
-    pub _ph: PhantomData<(F, H)>,
-    pub prng: ChaCha20Rng,
+pub struct FSProverChannel<F: Field, D: Digest> {
+    pub _ph: PhantomData<(F, D)>,
+    pub prng: PrngKeccak256,
     pub proof: Vec<u8>,
     pub states: ChannelStates,
 }
 
-impl<F: Field, H: TempHashContainer> FSProverChannel<F, H> {
-    pub fn new(prng: ChaCha20Rng) -> Self {
+impl<F: Field, D: Digest> FSProverChannel<F, D> {
+    pub fn new(prng: PrngKeccak256) -> Self {
         Self {
             _ph: PhantomData,
             prng,
@@ -24,36 +24,16 @@ impl<F: Field, H: TempHashContainer> FSProverChannel<F, H> {
     }
 }
 
-impl<F: Field, H: TempHashContainer> Channel for FSProverChannel<F, H> {
+impl<F: Field, D: Digest> Channel for FSProverChannel<F, D> {
     type Field = F;
 
-    fn recv_felem(&mut self, felem: Self::Field) -> Result<Self::Field, anyhow::Error> {
-        // TODO
-        Ok(felem)
-    }
-
-    fn recv_bytes(&mut self, n: usize) -> Result<Vec<u8>, anyhow::Error> {
+    fn draw_number(&mut self, upper_bound: u64) -> u64 {
         assert!(
-            !self.is_query_phase(),
+            !self.states.is_query_phase(),
             "Prover can't receive randomness after query phase has begun."
         );
 
-        let mut bytes = vec![0u8; n];
-        self.prng.fill_bytes(&mut bytes);
-        Ok(bytes)
-    }
-
-    // receive random number from verifier
-    fn random_number(&mut self, upper_bound: u64) -> u64 {
-        assert!(
-            !self.is_query_phase(),
-            "Prover can't receive randomness after query phase has begun."
-        );
-
-        // TODO : change bytes size dynamically
-        let mut raw_bytes = [0u8; std::mem::size_of::<u64>()];
-        self.prng.fill_bytes(&mut raw_bytes);
-        let number = u64::from_le_bytes(raw_bytes);
+        // draw number from PRNG
 
         assert!(
             upper_bound < 0x0001_0000_0000_0000,
@@ -63,35 +43,55 @@ impl<F: Field, H: TempHashContainer> Channel for FSProverChannel<F, H> {
         number % upper_bound
     }
 
-    fn random_field(&mut self) -> Self::Field {
+    fn draw_felem(&mut self) -> Self::Field {
         assert!(
-            !self.is_query_phase(),
+            !self.states.is_query_phase(),
             "Prover can't receive randomness after query phase has begun."
         );
 
-        let mut raw_bytes = [0u8; std::mem::size_of::<u64>()];
-        self.prng.fill_bytes(&mut raw_bytes);
-        let field_element = F::from_random_bytes(&raw_bytes).unwrap();
+        // draw felem from PRNG
 
         field_element
     }
 
-    // TODO : refactor
+    fn draw_felems(&mut self, n: usize) -> Vec<Self::Field> {
+        let mut field_elements = Vec::with_capacity(n);
+
+        for _ in 0..n {
+            let mut raw_bytes = self.draw_bytes();
+            field_elements.push(F::from_random_bytes(&mut raw_bytes).unwrap());
+        }
+
+        field_elements
+    }
+
+    fn draw_bytes(&mut self) -> [u8; std::mem::size_of::<u64>()] {
+        let mut raw_bytes = [0u8; std::mem::size_of::<u64>()];
+        self.prng.random_bytes(&mut raw_bytes);
+        raw_bytes
+    }
+}
+
+impl<F: Field, D: Digest> FSChannel for FSProverChannel<F, D> {
+    fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+
     fn is_end_of_proof(&self) -> bool {
         true
     }
 }
 
-impl<H: TempHashContainer, F: Field> ProverChannel for FSProverChannel<F, H> {
-    type HashT = H;
+impl<F: Field, D: Digest> ProverChannel for FSProverChannel<F, D> {
+    type Digest = D;
 
-    // TODO : 
+    // TODO :
     fn send_felts(&mut self, felts: Vec<Self::Field>) -> Result<(), anyhow::Error> {
         // for f in &felts {
         //     self.proof.push();
         // }
 
-        self.increment_field_element_count(felts.len());
+        self.states.increment_field_element_count(felts.len());
         Ok(())
     }
 
@@ -100,11 +100,15 @@ impl<H: TempHashContainer, F: Field> ProverChannel for FSProverChannel<F, H> {
             self.proof.push(*b);
         }
 
-        if !self.is_query_phase() {
-            let mut temp_bytes = bytes.clone();
-            self.prng.fill_bytes(&mut temp_bytes);
+        if !self.states.is_query_phase() {
+            let mut temp_bytes: Vec<u8> = bytes.clone();
+            self.prng.mix_seed_with_bytes(&mut temp_bytes);
         }
 
+        Ok(())
+    }
+
+    fn send_commit_hash(&mut self, hash: Self::Digest) -> Result<(), anyhow::Error> {
         Ok(())
     }
 }

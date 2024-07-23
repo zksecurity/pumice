@@ -1,5 +1,5 @@
+pub mod channel;
 mod felt252;
-// pub mod channel;
 mod hashutil;
 mod merkle;
 pub mod randomness;

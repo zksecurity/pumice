@@ -19,19 +19,19 @@ impl ChannelStates {
         self.commitment_count += 1;
     }
 
-    fn is_query_phase(&self) -> bool {
+    pub fn is_query_phase(&self) -> bool {
         self.is_query_phase
     }
 
-    fn begin_query_phase(&mut self) {
+    pub fn begin_query_phase(&mut self) {
         self.is_query_phase = true;
     }
 
-    fn increment_hash_count(&mut self) {
+    pub fn increment_hash_count(&mut self) {
         self.hash_count += 1;
     }
 
-    fn increment_field_element_count(&mut self, n: usize) {
+    pub fn increment_field_element_count(&mut self, n: usize) {
         self.field_element_count += n;
     }
 }
