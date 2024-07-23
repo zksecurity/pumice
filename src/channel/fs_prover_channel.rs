@@ -27,7 +27,6 @@ impl<F: Field, D: Digest, P: Prng> FSProverChannel<F, D, P> {
 impl<F: Field, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
     type Field = F;
 
-    // draw a number from the PRNG [0, upper_bound)
     fn draw_number(&mut self, upper_bound: u64) -> u64 {
         assert!(
             !self.states.is_query_phase(),
@@ -57,16 +56,6 @@ impl<F: Field, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
         field_element
     }
 
-    fn draw_felems(&mut self, n: usize) -> Vec<Self::Field> {
-        let mut field_elements = Vec::with_capacity(n);
-
-        for _ in 0..n {
-            field_elements.push(self.draw_felem());
-        }
-
-        field_elements
-    }
-
     #[inline]
     fn draw_bytes(&mut self) -> [u8; std::mem::size_of::<u64>()] {
         let mut raw_bytes = [0u8; std::mem::size_of::<u64>()];
@@ -88,7 +77,6 @@ impl<F: Field, D: Digest, P: Prng> FSChannel for FSProverChannel<F, D, P> {
 impl<F: Field, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, P> {
     type Digest = D;
 
-    // TODO :
     fn send_felts(&mut self, felts: Vec<Self::Field>) -> Result<(), anyhow::Error> {
         // for f in &felts {
         //     self.proof.push();
@@ -113,5 +101,46 @@ impl<F: Field, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, P> {
 
     fn send_commit_hash(&mut self, hash: Self::Digest) -> Result<(), anyhow::Error> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::channel::fs_prover_channel::{Channel, FSProverChannel};
+    use crate::felt252::Felt252;
+    use crate::randomness::prng::{Prng, PrngKeccak256};
+    use sha3::Sha3_256;
+
+    type MyFSProverChannel = FSProverChannel<Felt252, Sha3_256, PrngKeccak256>;
+
+    #[test]
+    fn test_draw_number() {
+        let prng = PrngKeccak256::new();
+        let mut channel = MyFSProverChannel::new(prng);
+
+        let upper_bound = 100;
+        let number = channel.draw_number(upper_bound);
+        assert!(number < upper_bound);
+    }
+
+    #[test]
+    fn test_draw_felem() {
+        let prng = PrngKeccak256::new();
+        let mut channel = MyFSProverChannel::new(prng);
+
+        let felem = channel.draw_felem();
+    }
+
+    #[test]
+    fn test_draw_felems() {
+        let prng = PrngKeccak256::new();
+        let mut channel = MyFSProverChannel::new(prng);
+
+        let n = 5;
+        let felems = channel.draw_felems(n);
+        assert_eq!(felems.len(), n);
+        // for felem in felems {
+        //     assert!(felem.is_valid());
+        // }
     }
 }

@@ -2,9 +2,6 @@ pub mod channel_states;
 //pub mod fs_verifier_channel;
 pub mod fs_prover_channel;
 
-#[cfg(test)]
-pub mod tests;
-
 use ark_ff::Field;
 use channel_states::ChannelStates;
 use sha3::Digest;
@@ -17,7 +14,9 @@ trait Channel {
 
     fn draw_felem(&mut self) -> Self::Field;
 
-    fn draw_felems(&mut self, n: usize) -> Vec<Self::Field>;
+    fn draw_felems(&mut self, n: usize) -> Vec<Self::Field> {
+        (0..n).map(|_| self.draw_felem()).collect()
+    }
 
     fn draw_bytes(&mut self) -> [u8; std::mem::size_of::<u64>()];
 }
