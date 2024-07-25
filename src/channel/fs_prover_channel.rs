@@ -1,17 +1,18 @@
 use crate::channel::{Channel, ChannelStates, FSChannel, ProverChannel};
 use crate::randomness::prng::Prng;
-use ark_ff::Field;
+use ark_ff::BigInteger as _;
+use ark_ff::PrimeField;
 use sha3::digest::{Digest, Output};
 use std::marker::PhantomData;
 
-pub struct FSProverChannel<F: Field, D: Digest, P: Prng> {
+pub struct FSProverChannel<F: PrimeField, D: Digest, P: Prng> {
     pub _ph: PhantomData<(F, D)>,
     pub prng: P,
     pub proof: Vec<u8>,
     pub states: ChannelStates,
 }
 
-impl<F: Field, D: Digest, P: Prng> FSProverChannel<F, D, P> {
+impl<F: PrimeField, D: Digest, P: Prng> FSProverChannel<F, D, P> {
     pub fn new(prng: P) -> Self {
         Self {
             _ph: PhantomData,
@@ -22,7 +23,7 @@ impl<F: Field, D: Digest, P: Prng> FSProverChannel<F, D, P> {
     }
 }
 
-impl<F: Field, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
+impl<F: PrimeField, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
     type Field = F;
 
     fn draw_number(&mut self, upper_bound: u64) -> u64 {
@@ -31,8 +32,8 @@ impl<F: Field, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
             "Prover can't receive randomness after query phase has begun."
         );
 
-        let raw_bytes = self.draw_bytes();
-        let number = u64::from_le_bytes(raw_bytes);
+        let raw_bytes = self.draw_bytes(std::mem::size_of::<u64>());
+        let number = u64::from_le_bytes(raw_bytes.try_into().unwrap());
 
         assert!(
             upper_bound < 0x0001_0000_0000_0000,
@@ -48,21 +49,21 @@ impl<F: Field, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
             "Prover can't receive randomness after query phase has begun."
         );
 
-        let mut raw_bytes = self.draw_bytes();
-        let field_element = F::from_random_bytes(&mut raw_bytes).unwrap();
+        let mut raw_bytes = self.draw_bytes((Self::Field::MODULUS_BIT_SIZE / 8) as usize);
+        let field_element = Self::Field::from_random_bytes(&mut raw_bytes).unwrap();
 
         field_element
     }
 
     #[inline]
-    fn draw_bytes(&mut self) -> [u8; std::mem::size_of::<u64>()] {
-        let mut raw_bytes = [0u8; std::mem::size_of::<u64>()];
+    fn draw_bytes(&mut self, n: usize) -> Vec<u8> {
+        let mut raw_bytes = vec![0u8; n];
         self.prng.random_bytes(&mut raw_bytes);
         raw_bytes
     }
 }
 
-impl<F: Field, D: Digest, P: Prng> FSChannel for FSProverChannel<F, D, P> {
+impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSProverChannel<F, D, P> {
     fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
         Ok(())
     }
@@ -72,16 +73,21 @@ impl<F: Field, D: Digest, P: Prng> FSChannel for FSProverChannel<F, D, P> {
     }
 }
 
-impl<F: Field, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, P> {
+impl<F: PrimeField, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, P> {
     type Digest = D;
 
+    fn send_felem(&mut self, felem: Self::Field) -> Result<(), anyhow::Error> {
+        let big_int = felem.into_bigint();
+        let bytes = big_int.to_bytes_be();
+        self.send_bytes(&bytes)?;
+
+        Ok(())
+    }
+
     fn send_felts(&mut self, felts: Vec<Self::Field>) -> Result<(), anyhow::Error> {
-        // TODO : get the size of the field element in bytes
-        // let elem_size_in_bytes = 8;
-        // let mut bytes = vec![0u8; elem_size_in_bytes * felts.len()];
-        // for (i, f) in felts.iter().enumerate() {
-        //     f.to_big_endian(&mut bytes[i * elem_size_in_bytes..(i + 1) * elem_size_in_bytes]);
-        // }
+        for felem in felts {
+            self.send_felem(felem)?;
+        }
 
         Ok(())
     }
@@ -106,7 +112,7 @@ impl<F: Field, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, P> {
 
 #[cfg(test)]
 mod tests {
-    use crate::channel::fs_prover_channel::{Channel, FSProverChannel};
+    use crate::channel::fs_prover_channel::{Channel, FSProverChannel, ProverChannel};
     use crate::felt252::Felt252;
     use crate::randomness::prng::{Prng, PrngKeccak256};
     use ark_ff::Zero;
@@ -144,5 +150,81 @@ mod tests {
         for felem in felems {
             assert!(!felem.is_zero());
         }
+    }
+
+    #[test]
+    fn test_receiving_bytes() {
+        let prng = PrngKeccak256::new();
+        let mut channel = MyFSProverChannel::new(prng);
+
+        for &size in [4, 8, 16, 18, 32, 33, 63, 64, 65].iter() {
+            let bytes = channel.draw_bytes(size);
+            assert_eq!(bytes.len(), size);
+        }
+    }
+
+    #[test]
+    fn test_recurring_calls_yield_uniform_distribution_statistical() {
+        let cafe_bytes: [u8; 4] = [0xca, 0xfe, 0xca, 0xfe];
+        let prng: PrngKeccak256 = PrngKeccak256::new_with_seed(&cafe_bytes);
+        let mut channel = MyFSProverChannel::new(prng);
+
+        let mut histogram: [u64; 10] = [0u64; 10];
+        for _ in 0..10000 {
+            let number = channel.draw_number(10);
+            histogram[number as usize] += 1;
+        }
+
+        for count in histogram.iter() {
+            assert!((1000 - 98..=1000 + 98).contains(count));
+        }
+
+        let mut max_random_number = 0;
+        for _ in 0..1000 {
+            let random_number = channel.draw_number(10000000);
+            if random_number > max_random_number {
+                max_random_number = random_number;
+            }
+        }
+
+        // TODO: this is empirical result using Blake2s256
+        assert_eq!(max_random_number, 9994934); // Empirical result. Should be roughly 9999000.
+    }
+
+    #[test]
+    fn test_sending_message_affects_randomness() {
+        let prng1 = PrngKeccak256::new();
+        let prng2 = PrngKeccak256::new();
+        let mut channel1 = MyFSProverChannel::new(prng1);
+        let mut channel2 = MyFSProverChannel::new(prng2);
+
+        assert_eq!(
+            channel1.draw_number(10000000),
+            channel2.draw_number(10000000)
+        );
+        channel1.send_felem(Felt252::from(1u64)).unwrap();
+        assert_ne!(
+            channel1.draw_number(10000000),
+            channel2.draw_number(10000000)
+        );
+    }
+
+    #[test]
+    fn test_sending_message_affects_randomness2() {
+        let prng1 = PrngKeccak256::new();
+        let prng2 = PrngKeccak256::new();
+        let mut channel1 = MyFSProverChannel::new(prng1);
+        let mut channel2 = MyFSProverChannel::new(prng2);
+
+        assert_eq!(
+            channel1.draw_number(10000000),
+            channel2.draw_number(10000000)
+        );
+        channel1.send_felem(Felt252::from(1u64)).unwrap();
+        channel2.send_felem(Felt252::from(2u64)).unwrap();
+        assert_ne!(
+            channel1.draw_number(10000000),
+            channel2.draw_number(10000000)
+        );
     }
 }

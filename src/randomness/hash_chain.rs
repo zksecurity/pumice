@@ -82,7 +82,7 @@ impl HashChain {
         let remain_bytes = KECCAK256_DIGEST_NUM_BYTES - num_bytes;
         if remain_bytes > 0 {
             assert!(
-                self.num_spare_bytes < remain_bytes,
+                self.num_spare_bytes + remain_bytes <= KECCAK256_DIGEST_NUM_BYTES,
                 "Not enough room in spare bytes buffer. Have {} bytes and want to add {} bytes",
                 self.num_spare_bytes,
                 remain_bytes

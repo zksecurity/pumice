@@ -1,14 +1,14 @@
 pub mod channel_states;
 pub mod fs_prover_channel;
-pub mod fs_verifier_channel;
+// pub mod fs_verifier_channel;
 
-use ark_ff::Field;
+use ark_ff::PrimeField;
 use channel_states::ChannelStates;
 use sha3::digest::{Digest, Output};
 
 #[allow(dead_code)]
 trait Channel {
-    type Field: Field;
+    type Field: PrimeField;
 
     fn draw_number(&mut self, bound: u64) -> u64;
 
@@ -22,7 +22,7 @@ trait Channel {
         felems
     }
 
-    fn draw_bytes(&mut self) -> [u8; std::mem::size_of::<u64>()];
+    fn draw_bytes(&mut self, n: usize) -> Vec<u8>;
 }
 
 trait FSChannel: Channel {
@@ -44,9 +44,11 @@ trait VerifierChannel: Channel {
 trait ProverChannel: Channel {
     type Digest: Digest;
 
+    fn send_felem(&mut self, felem: Self::Field) -> Result<(), anyhow::Error>;
+
     fn send_felts(&mut self, felts: Vec<Self::Field>) -> Result<(), anyhow::Error>;
 
     fn send_bytes(&mut self, bytes: &[u8]) -> Result<(), anyhow::Error>;
 
-    fn send_commit_hash(&mut self, digest: Output<Self::Digest>) -> Result<(), anyhow::Error>;
+    fn send_commit_hash(&mut self, commmitment: Output<Self::Digest>) -> Result<(), anyhow::Error>;
 }

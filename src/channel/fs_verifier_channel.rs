@@ -1,10 +1,10 @@
 use crate::channel::{Channel, ChannelStates, FSChannel, VerifierChannel};
 use crate::randomness::prng::Prng;
-use ark_ff::Field;
+use ark_ff::PrimeField;
 use sha3::digest::{Digest, Output, OutputSizeUser};
 use std::marker::PhantomData;
 
-pub struct FSVerifierChannel<F: Field, D: Digest, P: Prng> {
+pub struct FSVerifierChannel<F: PrimeField, D: Digest, P: Prng> {
     pub _ph: PhantomData<(F, D)>,
     pub prng: P,
     // TODO : turn this into an iterator
@@ -13,7 +13,7 @@ pub struct FSVerifierChannel<F: Field, D: Digest, P: Prng> {
     pub states: ChannelStates,
 }
 
-impl<F: Field, D: Digest, P: Prng> FSVerifierChannel<F, D, P> {
+impl<F: PrimeField, D: Digest, P: Prng> FSVerifierChannel<F, D, P> {
     pub fn new(prng: P, proof: Vec<u8>) -> Self {
         Self {
             _ph: PhantomData,
@@ -25,7 +25,7 @@ impl<F: Field, D: Digest, P: Prng> FSVerifierChannel<F, D, P> {
     }
 }
 
-impl<F: Field, D: Digest, P: Prng> Channel for FSVerifierChannel<F, D, P> {
+impl<F: PrimeField, D: Digest, P: Prng> Channel for FSVerifierChannel<F, D, P> {
     type Field = F;
 
     fn draw_number(&mut self, upper_bound: u64) -> u64 {
@@ -65,7 +65,7 @@ impl<F: Field, D: Digest, P: Prng> Channel for FSVerifierChannel<F, D, P> {
     }
 }
 
-impl<F: Field, D: Digest, P: Prng> FSChannel for FSVerifierChannel<F, D, P> {
+impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSVerifierChannel<F, D, P> {
     fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
         if security_bits == 0 {
             return Ok(());
@@ -82,7 +82,7 @@ impl<F: Field, D: Digest, P: Prng> FSChannel for FSVerifierChannel<F, D, P> {
     }
 }
 
-impl<F: Field, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F, D, P> {
+impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F, D, P> {
     type Digest = D;
 
     fn recv_felts(&mut self, felts: Vec<Self::Field>) -> Result<Vec<Self::Field>, anyhow::Error> {
@@ -105,7 +105,7 @@ impl<F: Field, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F, D, P
         Ok(raw_bytes.to_vec())
     }
 
-    fn recv_commit_hash(&mut self) -> Result<Output<Self::Digest>, anyhow::Error> {
+    fn recv_commit_hash(&mut self) -> Result<, anyhow::Error> {
         let size = <Self::Digest as OutputSizeUser>::output_size();
         let bytes = self.recv_bytes(size).unwrap();
 
