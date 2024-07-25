@@ -1,3 +1,6 @@
+pub mod hash;
+use crate::hash::Hasher;
+
 use std::{collections::VecDeque, marker::PhantomData};
 
 use ark_ff::Field;
@@ -20,18 +23,6 @@ impl<F: Field, H: Hasher<F>> MerkleTree<F, H> {
             leaves,
         }
     }
-}
-
-pub trait Hasher<F: Field> {
-    type Output: Clone + Eq;
-
-    // compress a list of internal nodes into a single internal node
-    #[allow(dead_code)]
-    fn node(input: &[Self::Output]) -> Self::Output;
-
-    // compress a list of leaves into a single leaf
-    #[allow(dead_code)]
-    fn leaf(input: &[F]) -> Self::Output;
 }
 
 impl<F: Field, H: Hasher<F>> MerkleTree<F, H> {
