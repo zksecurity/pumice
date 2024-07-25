@@ -1,7 +1,6 @@
 use crate::channel::{Channel, ChannelStates, FSChannel, ProverChannel};
 use crate::randomness::prng::Prng;
-use ark_ff::BigInteger as _;
-use ark_ff::PrimeField;
+use ark_ff::{BigInteger, PrimeField};
 use sha3::digest::{Digest, Output};
 use std::marker::PhantomData;
 
@@ -33,7 +32,7 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
         );
 
         let raw_bytes = self.draw_bytes(std::mem::size_of::<u64>());
-        let number = u64::from_le_bytes(raw_bytes.try_into().unwrap());
+        let number = u64::from_be_bytes(raw_bytes.try_into().unwrap());
 
         assert!(
             upper_bound < 0x0001_0000_0000_0000,
@@ -41,18 +40,6 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
         );
 
         number % upper_bound
-    }
-
-    fn draw_felem(&mut self) -> Self::Field {
-        assert!(
-            !self.states.is_query_phase(),
-            "Prover can't receive randomness after query phase has begun."
-        );
-
-        let raw_bytes = self.draw_bytes(((Self::Field::MODULUS_BIT_SIZE + 7) / 8) as usize);
-        let field_element = Self::Field::from_be_bytes_mod_order(&raw_bytes);
-
-        field_element
     }
 
     #[inline]
@@ -76,18 +63,16 @@ impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSProverChannel<F, D, P> {
 impl<F: PrimeField, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, P> {
     type Digest = D;
 
-    fn send_felem(&mut self, felem: Self::Field) -> Result<(), anyhow::Error> {
-        let big_int = felem.into_bigint();
-        let bytes = big_int.to_bytes_be();
-        self.send_bytes(&bytes)?;
-
-        Ok(())
-    }
-
-    fn send_felts(&mut self, felts: Vec<Self::Field>) -> Result<(), anyhow::Error> {
-        for felem in felts {
-            self.send_felem(felem)?;
+    fn send_felts(&mut self, felts: &[Self::Field]) -> Result<(), anyhow::Error> {
+        println!("sending felts: {:?}", felts);
+        let mut raw_bytes = vec![0u8; 0];
+        for &felem in felts {
+            let big_int = felem.into_bigint();
+            let bytes = big_int.to_bytes_be();
+            println!("send bytes: {:?}", bytes);
+            raw_bytes.extend_from_slice(&bytes);
         }
+        self.send_bytes(&raw_bytes)?;
 
         Ok(())
     }
@@ -96,6 +81,7 @@ impl<F: PrimeField, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, 
         self.proof.extend_from_slice(bytes);
 
         if !self.states.is_query_phase() {
+            println!("mixing seed with bytes: {:?}", bytes);
             self.prng.mix_seed_with_bytes(&bytes);
         }
 
@@ -107,6 +93,10 @@ impl<F: PrimeField, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, 
         self.states.increment_commitment_count();
         self.states.increment_hash_count();
         Ok(())
+    }
+
+    fn get_proof(&self) -> Vec<u8> {
+        self.proof.clone()
     }
 }
 
@@ -128,29 +118,6 @@ mod tests {
         let upper_bound = 100;
         let number = channel.draw_number(upper_bound);
         assert!(number < upper_bound);
-    }
-
-    #[test]
-    fn test_draw_felem() {
-        let prng = PrngKeccak256::new();
-        let mut channel = MyFSProverChannel::new(prng);
-
-        let felem = channel.draw_felem();
-        assert!(!felem.is_zero());
-    }
-
-    #[test]
-    fn test_draw_felts() {
-        let prng = PrngKeccak256::new();
-        let mut channel = MyFSProverChannel::new(prng);
-
-        let n = 5;
-        let felems = channel.draw_felts(n);
-        assert_eq!(felems.len(), n);
-        for felem in felems {
-            println!("felem: {:?}", felem);
-            assert!(!felem.is_zero());
-        }
     }
 
     #[test]
@@ -188,7 +155,6 @@ mod tests {
             }
         }
 
-        // TODO: this is empirical result using Blake2s256
         assert_eq!(max_random_number, 9994934); // Empirical result. Should be roughly 9999000.
     }
 
@@ -203,7 +169,7 @@ mod tests {
             channel1.draw_number(10000000),
             channel2.draw_number(10000000)
         );
-        channel1.send_felem(Felt252::from(1u64)).unwrap();
+        channel1.send_felts(&[Felt252::from(1u64)]).unwrap();
         assert_ne!(
             channel1.draw_number(10000000),
             channel2.draw_number(10000000)
@@ -221,8 +187,8 @@ mod tests {
             channel1.draw_number(10000000),
             channel2.draw_number(10000000)
         );
-        channel1.send_felem(Felt252::from(1u64)).unwrap();
-        channel2.send_felem(Felt252::from(2u64)).unwrap();
+        channel1.send_felts(&[Felt252::from(1u64)]).unwrap();
+        channel2.send_felts(&[Felt252::from(2u64)]).unwrap();
         assert_ne!(
             channel1.draw_number(10000000),
             channel2.draw_number(10000000)

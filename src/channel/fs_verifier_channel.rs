@@ -46,18 +46,6 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSVerifierChannel<F, D, P> {
         number % upper_bound
     }
 
-    fn draw_felem(&mut self) -> Self::Field {
-        assert!(
-            !self.states.is_query_phase(),
-            "Verifier can't send randomness after query phase has begun."
-        );
-
-        let raw_bytes = self.draw_bytes(((Self::Field::MODULUS_BIT_SIZE + 7) / 8) as usize);
-        let field_element = Self::Field::from_be_bytes_mod_order(&raw_bytes);
-
-        field_element
-    }
-
     #[inline]
     fn draw_bytes(&mut self, n: usize) -> Vec<u8> {
         let mut raw_bytes = vec![0u8; n];
@@ -86,22 +74,17 @@ impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSVerifierChannel<F, D, P>
 impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F, D, P> {
     type Digest = D;
 
-    fn recv_felem(&mut self) -> Result<Self::Field, anyhow::Error> {
-        let raw_bytes = self
-            .recv_bytes((Self::Field::MODULUS_BIT_SIZE / 8) as usize)
-            .unwrap();
-        let field_element = Self::Field::from_random_bytes(&raw_bytes).unwrap();
-
-        Ok(field_element)
-    }
-
     fn recv_felts(&mut self, n: usize) -> Result<Vec<Self::Field>, anyhow::Error> {
         let mut felts = Vec::with_capacity(n);
-        for _ in 0..n {
-            let felt = self.recv_felem().unwrap();
+        let chunk_bytes_size = ((Self::Field::MODULUS_BIT_SIZE + 7) / 8) as usize;
+        let raw_bytes: Vec<u8> = self.recv_bytes(n * chunk_bytes_size).unwrap();
+
+        for chunk in raw_bytes.chunks_exact(chunk_bytes_size) {
+            let felt = Self::Field::from_be_bytes_mod_order(&chunk);
             felts.push(felt);
         }
 
+        println!("received felts: {:?}", felts);
         Ok(felts)
     }
 
@@ -114,6 +97,7 @@ impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F,
         let raw_bytes = &self.proof[self.proof_read_index..self.proof_read_index + n];
         self.proof_read_index += n;
         if !self.states.is_query_phase() {
+            println!("mixing seed with bytes: {:?}", raw_bytes);
             self.prng.mix_seed_with_bytes(&raw_bytes);
         }
         self.states.increment_byte_count(raw_bytes.len());
