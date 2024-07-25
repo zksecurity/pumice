@@ -36,7 +36,7 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSVerifierChannel<F, D, P> {
         );
 
         let raw_bytes = self.draw_bytes(std::mem::size_of::<u64>());
-        let number = u64::from_le_bytes(raw_bytes.try_into().unwrap());
+        let number = u64::from_be_bytes(raw_bytes.try_into().unwrap());
 
         assert!(
             upper_bound < 0x0001_0000_0000_0000,
@@ -84,7 +84,6 @@ impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F,
             felts.push(felt);
         }
 
-        println!("received felts: {:?}", felts);
         Ok(felts)
     }
 
@@ -97,7 +96,6 @@ impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F,
         let raw_bytes = &self.proof[self.proof_read_index..self.proof_read_index + n];
         self.proof_read_index += n;
         if !self.states.is_query_phase() {
-            println!("mixing seed with bytes: {:?}", raw_bytes);
             self.prng.mix_seed_with_bytes(&raw_bytes);
         }
         self.states.increment_byte_count(raw_bytes.len());

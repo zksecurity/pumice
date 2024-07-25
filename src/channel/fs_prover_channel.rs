@@ -64,12 +64,10 @@ impl<F: PrimeField, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, 
     type Digest = D;
 
     fn send_felts(&mut self, felts: &[Self::Field]) -> Result<(), anyhow::Error> {
-        println!("sending felts: {:?}", felts);
         let mut raw_bytes = vec![0u8; 0];
         for &felem in felts {
             let big_int = felem.into_bigint();
             let bytes = big_int.to_bytes_be();
-            println!("send bytes: {:?}", bytes);
             raw_bytes.extend_from_slice(&bytes);
         }
         self.send_bytes(&raw_bytes)?;
@@ -81,7 +79,6 @@ impl<F: PrimeField, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, 
         self.proof.extend_from_slice(bytes);
 
         if !self.states.is_query_phase() {
-            println!("mixing seed with bytes: {:?}", bytes);
             self.prng.mix_seed_with_bytes(&bytes);
         }
 
