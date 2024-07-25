@@ -1,6 +1,7 @@
 use crate::channel::{Channel, ChannelStates, FSChannel, VerifierChannel};
 use crate::randomness::prng::Prng;
 use ark_ff::PrimeField;
+use sha3::digest::generic_array::GenericArray;
 use sha3::digest::{Digest, Output, OutputSizeUser};
 use std::marker::PhantomData;
 
@@ -34,8 +35,8 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSVerifierChannel<F, D, P> {
             "Verifier can't send randomness after query phase has begun."
         );
 
-        let raw_bytes = self.draw_bytes();
-        let number = u64::from_le_bytes(raw_bytes);
+        let raw_bytes = self.draw_bytes(std::mem::size_of::<u64>());
+        let number = u64::from_le_bytes(raw_bytes.try_into().unwrap());
 
         assert!(
             upper_bound < 0x0001_0000_0000_0000,
@@ -51,15 +52,15 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSVerifierChannel<F, D, P> {
             "Verifier can't send randomness after query phase has begun."
         );
 
-        let raw_bytes = self.draw_bytes();
-        let field_element = F::from_random_bytes(&raw_bytes).unwrap();
+        let raw_bytes = self.draw_bytes(((Self::Field::MODULUS_BIT_SIZE + 7) / 8) as usize);
+        let field_element = Self::Field::from_be_bytes_mod_order(&raw_bytes);
 
         field_element
     }
 
     #[inline]
-    fn draw_bytes(&mut self) -> [u8; std::mem::size_of::<u64>()] {
-        let mut raw_bytes = [0u8; std::mem::size_of::<u64>()];
+    fn draw_bytes(&mut self, n: usize) -> Vec<u8> {
+        let mut raw_bytes = vec![0u8; n];
         self.prng.random_bytes(&mut raw_bytes);
         raw_bytes
     }
@@ -85,8 +86,22 @@ impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSVerifierChannel<F, D, P>
 impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F, D, P> {
     type Digest = D;
 
-    fn recv_felts(&mut self, felts: Vec<Self::Field>) -> Result<Vec<Self::Field>, anyhow::Error> {
-        // TODO
+    fn recv_felem(&mut self) -> Result<Self::Field, anyhow::Error> {
+        let raw_bytes = self
+            .recv_bytes((Self::Field::MODULUS_BIT_SIZE / 8) as usize)
+            .unwrap();
+        let field_element = Self::Field::from_random_bytes(&raw_bytes).unwrap();
+
+        Ok(field_element)
+    }
+
+    fn recv_felts(&mut self, n: usize) -> Result<Vec<Self::Field>, anyhow::Error> {
+        let mut felts = Vec::with_capacity(n);
+        for _ in 0..n {
+            let felt = self.recv_felem().unwrap();
+            felts.push(felt);
+        }
+
         Ok(felts)
     }
 
@@ -105,16 +120,14 @@ impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F,
         Ok(raw_bytes.to_vec())
     }
 
-    fn recv_commit_hash(&mut self) -> Result<, anyhow::Error> {
+    fn recv_commit_hash(&mut self) -> Result<Output<Self::Digest>, anyhow::Error> {
         let size = <Self::Digest as OutputSizeUser>::output_size();
         let bytes = self.recv_bytes(size).unwrap();
 
-        // TODO : convert bytes to Output<Self::Digest>
-        // let hash = Output::<Self::Digest>::from(bytes.as_slice());
+        let commitment = GenericArray::clone_from_slice(&bytes.as_slice());
 
         self.states.increment_commitment_count();
         self.states.increment_hash_count();
-        //Ok(hash)
-        Err(anyhow::anyhow!("Not implemented"))
+        Ok(commitment)
     }
 }

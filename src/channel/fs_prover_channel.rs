@@ -49,8 +49,8 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
             "Prover can't receive randomness after query phase has begun."
         );
 
-        let mut raw_bytes = self.draw_bytes((Self::Field::MODULUS_BIT_SIZE / 8) as usize);
-        let field_element = Self::Field::from_random_bytes(&mut raw_bytes).unwrap();
+        let raw_bytes = self.draw_bytes(((Self::Field::MODULUS_BIT_SIZE + 7) / 8) as usize);
+        let field_element = Self::Field::from_be_bytes_mod_order(&raw_bytes);
 
         field_element
     }
@@ -102,8 +102,8 @@ impl<F: PrimeField, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, 
         Ok(())
     }
 
-    fn send_commit_hash(&mut self, digest: Output<Self::Digest>) -> Result<(), anyhow::Error> {
-        self.send_bytes(digest.as_slice())?;
+    fn send_commit_hash(&mut self, commitment: Output<Self::Digest>) -> Result<(), anyhow::Error> {
+        self.send_bytes(commitment.as_slice())?;
         self.states.increment_commitment_count();
         self.states.increment_hash_count();
         Ok(())
@@ -140,14 +140,15 @@ mod tests {
     }
 
     #[test]
-    fn test_draw_felems() {
+    fn test_draw_felts() {
         let prng = PrngKeccak256::new();
         let mut channel = MyFSProverChannel::new(prng);
 
         let n = 5;
-        let felems = channel.draw_felems(n);
+        let felems = channel.draw_felts(n);
         assert_eq!(felems.len(), n);
         for felem in felems {
+            println!("felem: {:?}", felem);
             assert!(!felem.is_zero());
         }
     }

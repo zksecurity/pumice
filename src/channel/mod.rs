@@ -1,6 +1,6 @@
 pub mod channel_states;
 pub mod fs_prover_channel;
-// pub mod fs_verifier_channel;
+pub mod fs_verifier_channel;
 
 use ark_ff::PrimeField;
 use channel_states::ChannelStates;
@@ -12,9 +12,10 @@ trait Channel {
 
     fn draw_number(&mut self, bound: u64) -> u64;
 
+    // XXX : do we really need draw_felem ???
     fn draw_felem(&mut self) -> Self::Field;
 
-    fn draw_felems(&mut self, n: usize) -> Vec<Self::Field> {
+    fn draw_felts(&mut self, n: usize) -> Vec<Self::Field> {
         let mut felems = Vec::with_capacity(n);
         for _ in 0..n {
             felems.push(self.draw_felem());
@@ -34,7 +35,9 @@ trait FSChannel: Channel {
 trait VerifierChannel: Channel {
     type Digest: Digest;
 
-    fn recv_felts(&mut self, felts: Vec<Self::Field>) -> Result<Vec<Self::Field>, anyhow::Error>;
+    fn recv_felem(&mut self) -> Result<Self::Field, anyhow::Error>;
+
+    fn recv_felts(&mut self, n: usize) -> Result<Vec<Self::Field>, anyhow::Error>;
 
     fn recv_bytes(&mut self, n: usize) -> Result<Vec<u8>, anyhow::Error>;
 
