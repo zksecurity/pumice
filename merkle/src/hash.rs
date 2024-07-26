@@ -1,6 +1,6 @@
-use std::{fmt::Debug, marker::PhantomData};
 use ark_ff::{BigInteger, PrimeField};
 use blake2::{Blake2s256, Digest};
+use std::{fmt::Debug, marker::PhantomData};
 
 pub trait Hasher<F: PrimeField> {
     type Output: Clone + Eq + Default + Debug;
@@ -17,11 +17,13 @@ pub struct Blake2s256Hasher<F: PrimeField> {
 }
 
 impl<F: PrimeField> Hasher<F> for Blake2s256Hasher<F> {
-
     type Output = [u8; 32];
 
     fn leaf(input: &[F]) -> Self::Output {
-        let input_bytes: Vec<u8> = input.iter().flat_map(|f| f.into_bigint().to_bytes_be()).collect();
+        let input_bytes: Vec<u8> = input
+            .iter()
+            .flat_map(|f| f.into_bigint().to_bytes_be())
+            .collect();
         let mut hasher = Blake2s256::new();
         hasher.update(input_bytes);
         hasher.finalize().into()
@@ -33,5 +35,4 @@ impl<F: PrimeField> Hasher<F> for Blake2s256Hasher<F> {
         hasher.update(input_bytes);
         hasher.finalize().into()
     }
-
 }
