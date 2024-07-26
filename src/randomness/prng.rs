@@ -81,6 +81,7 @@ pub trait PrngOnlyForTest: Prng {
     }
 
     fn uniform_bigint<B: BigInteger>(&mut self, min: B, max: B) -> B;
+    fn random_felem<F: PrimeField>(&mut self) -> F;
     fn random_felts_vec<F: PrimeField>(&mut self, n_elements: usize) -> Vec<F>;
     fn seed_from_system_time() -> [u8; 8];
 }
@@ -175,6 +176,13 @@ impl PrngOnlyForTest for PrngKeccak256 {
         }
         random_value.add_with_carry(&min);
         random_value
+    }
+
+    fn random_felem<F: PrimeField>(&mut self) -> F {
+        let byte_size = (F::MODULUS_BIT_SIZE as usize + 7) / 8;
+        let mut bytes = vec![0u8; byte_size];
+        self.random_bytes(&mut bytes);
+        F::from_be_bytes_mod_order(&bytes)
     }
 
     fn random_felts_vec<F: PrimeField>(&mut self, n_elements: usize) -> Vec<F> {

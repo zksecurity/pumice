@@ -1,6 +1,7 @@
 use crate::channel::{Channel, ChannelStates, FSChannel, ProverChannel};
 use crate::randomness::prng::Prng;
-use ark_ff::{BigInteger, PrimeField};
+use ark_ff::{BigInt, BigInteger, PrimeField};
+use num_bigint::BigUint;
 use sha3::digest::{Digest, Output};
 use std::marker::PhantomData;
 
@@ -40,6 +41,44 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
         );
 
         number % upper_bound
+    }
+
+    fn draw_felem(&mut self) -> Self::Field {
+        assert!(
+            !self.states.is_query_phase(),
+            "Prover can't receive randomness after query phase has begun."
+        );
+
+        // from stone-prover/src/starkware/algebra/fields/big_prime_constants.h
+        //   static constexpr ValueType kMaxDivisible = 0xf8000000000000000000000000000000000000000007c000000000000000001f_Z;
+        let max_divisible = BigUint::parse_bytes(
+            b"f8000000000000000000000000000000000000000007c000000000000000001f",
+            16,
+        )
+        .unwrap();
+        let mod_felt252 = BigUint::parse_bytes(
+            b"800000000000000000000000000000000000000000040000000000000000001",
+            16,
+        )
+        .unwrap();
+
+        let mut raw_bytes: Vec<u8>;
+        let mut random_biguint: BigUint;
+        loop {
+            raw_bytes = self.draw_bytes(((Self::Field::MODULUS_BIT_SIZE + 7) / 8) as usize);
+            random_biguint = BigUint::from_bytes_be(&raw_bytes);
+            if random_biguint < max_divisible {
+                random_biguint = random_biguint.modpow(&BigUint::from(1u64), &mod_felt252);
+                break;
+            }
+        }
+
+        let field_element: F = Self::Field::from_bigint(
+            <Self::Field as PrimeField>::BigInt::try_from(random_biguint).unwrap(),
+        )
+        .unwrap();
+
+        field_element
     }
 
     #[inline]
@@ -92,6 +131,15 @@ impl<F: PrimeField, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, 
         Ok(())
     }
 
+    fn send_decommit_node(
+        &mut self,
+        decommitment: Output<Self::Digest>,
+    ) -> Result<(), anyhow::Error> {
+        self.send_bytes(decommitment.as_slice())?;
+        self.states.increment_hash_count();
+        Ok(())
+    }
+
     fn get_proof(&self) -> Vec<u8> {
         self.proof.clone()
     }
@@ -102,7 +150,6 @@ mod tests {
     use crate::channel::fs_prover_channel::{Channel, FSProverChannel, ProverChannel};
     use crate::felt252::Felt252;
     use crate::randomness::prng::{Prng, PrngKeccak256};
-    use ark_ff::Zero;
     use sha3::Sha3_256;
 
     type MyFSProverChannel = FSProverChannel<Felt252, Sha3_256, PrngKeccak256>;

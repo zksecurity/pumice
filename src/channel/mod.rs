@@ -15,8 +15,7 @@ trait Channel {
 
     fn draw_number(&mut self, bound: u64) -> u64;
 
-    // // XXX : do we really need draw_felem ???
-    // fn draw_felem(&mut self) -> Self::Field;
+    fn draw_felem(&mut self) -> Self::Field;
 
     // fn draw_felts(&mut self, n: usize) -> Vec<Self::Field> {
     //     let mut felems = Vec::with_capacity(n);
@@ -43,6 +42,8 @@ trait VerifierChannel: Channel {
     fn recv_bytes(&mut self, n: usize) -> Result<Vec<u8>, anyhow::Error>;
 
     fn recv_commit_hash(&mut self) -> Result<Output<Self::Digest>, anyhow::Error>;
+
+    fn recv_decommit_node(&mut self) -> Result<Output<Self::Digest>, anyhow::Error>;
 }
 
 trait ProverChannel: Channel {
@@ -53,6 +54,11 @@ trait ProverChannel: Channel {
     fn send_bytes(&mut self, bytes: &[u8]) -> Result<(), anyhow::Error>;
 
     fn send_commit_hash(&mut self, commmitment: Output<Self::Digest>) -> Result<(), anyhow::Error>;
+
+    fn send_decommit_node(
+        &mut self,
+        decommitment: Output<Self::Digest>,
+    ) -> Result<(), anyhow::Error>;
 
     fn get_proof(&self) -> Vec<u8>;
 }
