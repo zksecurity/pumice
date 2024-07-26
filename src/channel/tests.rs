@@ -83,8 +83,8 @@ fn sending_consistent_with_receiving_bytes() {
     prng.random_bytes(&mut pdata2);
 
     let mut prover_channel = MyFSProverChannel::new(PrngKeccak256::new());
-    prover_channel.send_bytes(&pdata1);
-    prover_channel.send_bytes(&pdata2);
+    let _ = prover_channel.send_bytes(&pdata1);
+    let _ = prover_channel.send_bytes(&pdata2);
 
     let proof = prover_channel.get_proof();
     let mut verifier_channel = MyFSVerifierChannel::new(PrngKeccak256::new(), proof);
@@ -181,7 +181,7 @@ fn sending_consistent_with_receiving_random_bytes() {
         let random_num = prng.uniform_int(0..=128) as usize;
         let mut bytes_to_send = vec![0; random_num];
         prng.random_bytes(&mut bytes_to_send);
-        prover_channel.send_bytes(&bytes_to_send);
+        let _ = prover_channel.send_bytes(&bytes_to_send);
         bytes_sent.push(bytes_to_send);
     }
 
@@ -200,7 +200,7 @@ fn fri_flow_simulation() {
     let pcommitment1 = generate_commitment(&mut prng);
 
     // First FRI layer
-    prover_channel.send_commit_hash(pcommitment1);
+    let _ = prover_channel.send_commit_hash(pcommitment1);
     // first evaluation point
     let ptest_field_element1 = prover_channel.draw_felem();
     // second evaluation point
@@ -208,7 +208,7 @@ fn fri_flow_simulation() {
 
     // expected last layer const
     let pexpected_last_layer_const = prng.random_felem::<Felt252>();
-    prover_channel.send_felts(&[pexpected_last_layer_const]);
+    let _ = prover_channel.send_felts(&[pexpected_last_layer_const]);
 
     // query index#1 first layer
     let pnumber1 = prover_channel.draw_number(8);
@@ -219,7 +219,7 @@ fn fri_flow_simulation() {
     for _ in 0..15 {
         let node = generate_commitment(&mut prng);
         // FRI layer
-        prover_channel.send_decommit_node(node);
+        let _ = prover_channel.send_decommit_node(node);
         pdecommitment1.push(node);
     }
 

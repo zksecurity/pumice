@@ -1,6 +1,7 @@
 pub mod channel_states;
 pub mod fs_prover_channel;
 pub mod fs_verifier_channel;
+pub mod pow;
 
 #[cfg(test)]
 mod tests;
