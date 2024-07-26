@@ -6,3 +6,8 @@ edition = "2021"
 [dependencies]
 ark-ff.workspace = true
 blake2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+felt = { path = "../felt" }
+hex-literal.workspace = true

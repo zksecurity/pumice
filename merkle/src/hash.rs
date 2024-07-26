@@ -1,9 +1,9 @@
-use std::marker::PhantomData;
+use std::{fmt::Debug, marker::PhantomData};
 use ark_ff::{BigInteger, PrimeField};
 use blake2::{Blake2s256, Digest};
 
 pub trait Hasher<F: PrimeField> {
-    type Output: Clone + Eq;
+    type Output: Clone + Eq + Default + Debug;
 
     // compress a list of internal nodes into a single internal node
     fn node(input: &[Self::Output]) -> Self::Output;
