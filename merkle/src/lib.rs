@@ -25,7 +25,6 @@ impl<F: PrimeField, H: Hasher<F>> MerkleTree<F, H> {
     /// # Returns
     ///
     /// - `Self`: MerkleTree which commits on the input data
-    #[allow(dead_code)]
     pub fn new(data: &[H::Output]) -> Self {
         let num_leaves = data.len();
 
@@ -205,14 +204,13 @@ impl<F: PrimeField, H: Hasher<F>> MerkleTree<F, H> {
 
                     // push the parent node to the queue
                     queue.push_back((idx / 2, H::node(&nodes)));
-                } // any other case is invalid (bad proof)
-                  // _ => break None,
+                }
             }
         }
     }
 }
 
-/// Errors returned by Nova
+/// Errors returned by Merkle Tree Verification
 #[derive(Clone, Debug, Eq, PartialEq, Error)]
 #[non_exhaustive]
 pub enum MerkleError {
