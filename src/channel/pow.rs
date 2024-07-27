@@ -1,4 +1,4 @@
-use sha3::digest::{Digest, Output, OutputSizeUser};
+use sha3::digest::{Digest, OutputSizeUser};
 use std::vec::Vec;
 use std::{
     sync::{
@@ -14,7 +14,13 @@ pub struct ProofOfWorkProver<D: Digest> {
 
 impl<D: Digest> ProofOfWorkProver<D> {
     // TODO : Implement task manager
-    pub fn prove(&self, seed: &[u8], work_bits: usize, log_chunk_size: u64) -> Vec<u8> {
+    pub fn prove(
+        &self,
+        seed: &[u8],
+        work_bits: usize,
+        try_thread_count: usize,
+        log_chunk_size: u64,
+    ) -> Vec<u8> {
         assert!(work_bits > 0, "At least one bits of work requires.");
         assert!(work_bits <= 64, "Too many bits of work requested");
 
@@ -28,7 +34,7 @@ impl<D: Digest> ProofOfWorkProver<D> {
         let chunk_size = 1u64 << log_chunk_size;
         let thread_count = if work_bits > log_chunk_size.try_into().unwrap() {
             // TODO : use taskmgr threads count
-            24
+            try_thread_count
         } else {
             1
         };
@@ -36,8 +42,6 @@ impl<D: Digest> ProofOfWorkProver<D> {
         let nonce_bound = thread_count as u64 * chunk_size;
         let next_chunk_to_search = Arc::new(AtomicU64::new(nonce_bound));
         let lowest_nonce_found = Arc::new(AtomicU64::new(u64::MAX));
-        println!("next_chunk_to_search: {:?}", next_chunk_to_search);
-        println!("lowest_nonce_found: {:?}", lowest_nonce_found);
 
         let mut handles = vec![];
         for thread_id in 0..thread_count {
@@ -65,8 +69,8 @@ impl<D: Digest> ProofOfWorkProver<D> {
                         }
                     }
                     nonce_start = next_chunk_to_search.fetch_add(chunk_size, Ordering::SeqCst);
-                    if nonce_start < lowest_nonce_found.load(Ordering::Relaxed)
-                        && nonce_start >= nonce_bound
+                    if nonce_start >= lowest_nonce_found.load(Ordering::Relaxed)
+                        || nonce_start < nonce_bound
                     {
                         break;
                     }
@@ -170,64 +174,72 @@ mod tests {
         };
 
         let work_bits = 15;
+        let thread_count = 1;
+        let log_chunk_size = 20;
         let seed = get_prng_state();
-        let witness = pow_prover.prove(&seed, work_bits, 10);
+        let witness = pow_prover.prove(&seed, work_bits, thread_count, log_chunk_size);
 
         assert!(pow_verifier.verify(&seed, work_bits, &witness));
     }
 
-    // #[test]
-    // fn test_soundness() {
-    //     let pow_prover = ProofOfWorkProver::<Keccak256> {
-    //         _hash: std::marker::PhantomData,
-    //     };
-    //     let pow_verifier = ProofOfWorkVerifier::<Keccak256> {
-    //         _hash: std::marker::PhantomData,
-    //     };
+    #[test]
+    fn test_soundness() {
+        let pow_prover = ProofOfWorkProver::<Keccak256> {
+            _hash: std::marker::PhantomData,
+        };
+        let pow_verifier = ProofOfWorkVerifier::<Keccak256> {
+            _hash: std::marker::PhantomData,
+        };
 
-    //     let work_bits = 15;
-    //     let seed = get_prng_state();
-    //     let witness = pow_prover.prove(&seed, work_bits, 10);
+        let work_bits = 15;
+        let thread_count = 1;
+        let log_chunk_size = 20;
+        let seed = get_prng_state();
+        let witness = pow_prover.prove(&seed, work_bits, thread_count, log_chunk_size);
 
-    //     assert!(!pow_verifier.verify(&seed, work_bits + 1, &witness));
-    //     assert!(!pow_verifier.verify(&seed, work_bits - 1, &witness));
-    // }
+        assert!(!pow_verifier.verify(&seed, work_bits + 1, &witness));
+        assert!(!pow_verifier.verify(&seed, work_bits - 1, &witness));
+    }
 
-    // #[test]
-    // fn test_bit_change() {
-    //     let pow_prover = ProofOfWorkProver::<Keccak256> {
-    //         _hash: std::marker::PhantomData,
-    //     };
-    //     let pow_verifier = ProofOfWorkVerifier::<Keccak256> {
-    //         _hash: std::marker::PhantomData,
-    //     };
+    #[test]
+    fn test_bit_change() {
+        let pow_prover = ProofOfWorkProver::<Keccak256> {
+            _hash: std::marker::PhantomData,
+        };
+        let pow_verifier = ProofOfWorkVerifier::<Keccak256> {
+            _hash: std::marker::PhantomData,
+        };
 
-    //     let work_bits = 15;
-    //     let seed = get_prng_state();
-    //     let mut witness = pow_prover.prove(&seed, work_bits, 10);
+        let work_bits = 15;
+        let thread_count = 1;
+        let log_chunk_size = 20;
+        let seed = get_prng_state();
+        let mut witness = pow_prover.prove(&seed, work_bits, thread_count, log_chunk_size);
 
-    //     for byte_index in 0..witness.len() {
-    //         for bit_index in 0..8 {
-    //             witness[byte_index] ^= 1 << bit_index;
-    //             assert!(!pow_verifier.verify(&seed, work_bits, &witness));
-    //             witness[byte_index] ^= 1 << bit_index;
-    //         }
-    //     }
-    // }
+        for byte_index in 0..witness.len() {
+            for bit_index in 0..8 {
+                witness[byte_index] ^= 1 << bit_index;
+                assert!(!pow_verifier.verify(&seed, work_bits, &witness));
+                witness[byte_index] ^= 1 << bit_index;
+            }
+        }
+    }
 
-    // #[test]
-    // fn test_parallel_completeness() {
-    //     let pow_prover = ProofOfWorkProver::<Keccak256> {
-    //         _hash: std::marker::PhantomData,
-    //     };
-    //     let pow_verifier = ProofOfWorkVerifier::<Keccak256> {
-    //         _hash: std::marker::PhantomData,
-    //     };
+    #[test]
+    fn test_parallel_completeness() {
+        let pow_prover = ProofOfWorkProver::<Keccak256> {
+            _hash: std::marker::PhantomData,
+        };
+        let pow_verifier = ProofOfWorkVerifier::<Keccak256> {
+            _hash: std::marker::PhantomData,
+        };
 
-    //     let work_bits = 18;
-    //     let seed = get_prng_state();
-    //     let witness = pow_prover.prove(&seed, work_bits, 15);
+        let work_bits = 18;
+        let thread_count = 10;
+        let log_chunk_size = 15;
+        let seed = get_prng_state();
+        let witness = pow_prover.prove(&seed, work_bits, thread_count, log_chunk_size);
 
-    //     assert!(pow_verifier.verify(&seed, work_bits, &witness));
-    // }
+        assert!(pow_verifier.verify(&seed, work_bits, &witness));
+    }
 }
