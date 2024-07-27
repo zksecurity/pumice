@@ -1,4 +1,3 @@
-use rand::Rng;
 use sha3::{Digest, Keccak256};
 
 macro_rules! keccak256 {

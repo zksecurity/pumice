@@ -6,7 +6,7 @@ use crate::{
     Felt252,
 };
 use ark_ff::PrimeField;
-use blake2::{Blake2s256, Digest};
+use blake2::Blake2s256;
 use hex_literal::hex;
 use sha3::digest::generic_array::GenericArray;
 use sha3::digest::OutputSizeUser;
@@ -14,7 +14,6 @@ use sha3::Sha3_256;
 
 type MyFSVerifierChannel = FSVerifierChannel<Felt252, Sha3_256, PrngKeccak256>;
 type MyFSProverChannel = FSProverChannel<Felt252, Sha3_256, PrngKeccak256>;
-type BigIntFelt252 = <Felt252 as PrimeField>::BigInt;
 
 fn generate_commitment(
     prng: &mut PrngKeccak256,
@@ -96,80 +95,77 @@ fn sending_consistent_with_receiving_bytes() {
     assert_eq!(vdata2, pdata2);
 }
 
-// TODO : later
-// #[test]
-// fn proof_of_work() {
-//     let prng = PrngKeccak256::new();
-//     let mut prover_channel = MyFSProverChannel::new(prng);
+#[test]
+fn proof_of_work() {
+    let mut prover_channel = MyFSProverChannel::new(PrngKeccak256::new());
 
-//     let work_bits = 15;
-//     prover_channel.apply_proof_of_work(work_bits);
-//     let pow_value = prover_channel.recv_number(1 << 24);
+    let work_bits = 15;
+    let _ = prover_channel.apply_proof_of_work(work_bits);
+    let pow_value = prover_channel.draw_number(1 << 24);
 
-//     let proof = prover_channel.get_proof();
-//     let prng = PrngKeccak256::new();
-//     let mut verifier_channel = MyFSVerifierChannel::new(prng, proof);
+    let proof = prover_channel.get_proof();
+    let mut verifier_channel = MyFSVerifierChannel::new(PrngKeccak256::new(), proof.clone());
 
-//     verifier_channel.apply_proof_of_work(work_bits);
-//     assert_eq!(verifier_channel.send_number(1 << 24), pow_value);
+    let _ = verifier_channel.apply_proof_of_work(work_bits);
+    assert_eq!(verifier_channel.draw_number(1 << 24), pow_value);
 
-//     let prng = PrngKeccak256::new();
-//     let mut verifier_channel_bad_1 = MyFSVerifierChannel::new(prng, proof.clone());
-//     assert!(verifier_channel_bad_1.apply_proof_of_work(work_bits + 1).is_err());
+    let mut verifier_channel_bad_1 = MyFSVerifierChannel::new(PrngKeccak256::new(), proof.clone());
+    assert!(verifier_channel_bad_1
+        .apply_proof_of_work(work_bits + 1)
+        .is_err());
 
-//     let prng = PrngKeccak256::new();
-//     let mut verifier_channel_bad2 = MyFSVerifierChannel::new(prng, proof.clone());
-//     assert!(verifier_channel_bad2.apply_proof_of_work(work_bits - 1).is_err());
+    let mut verifier_channel_bad2 = MyFSVerifierChannel::new(PrngKeccak256::new(), proof.clone());
+    assert!(verifier_channel_bad2
+        .apply_proof_of_work(work_bits - 1)
+        .is_err());
 
-//     let prng = PrngKeccak256::new();
-//     let mut nonpow_prover_channel = MyFSProverChannel::new(prng);
-//     assert_ne!(nonpow_prover_channel.recv_number(1 << 24), pow_value);
-// }
+    let mut nonpow_prover_channel = MyFSProverChannel::new(PrngKeccak256::new());
+    assert_ne!(nonpow_prover_channel.draw_number(1 << 24), pow_value);
+}
 
-// #[test]
-// fn proof_of_work_depends_on_state() {
-//     let prng = PrngKeccak256::new();
-//     let mut prover_channel_1 = MyFSProverChannel::new(prng);
-//     let pdata1 = prover_channel_1.draw_byte_vector(8);
-//     prover_channel_1.send_bytes(&pdata1);
+#[test]
+fn proof_of_work_depends_on_state() {
+    let mut prng = PrngKeccak256::new();
 
-//     let work_bits = 15;
-//     prover_channel_1.apply_proof_of_work(work_bits);
-//     let pow_value_1 = prover_channel_1.recv_number(1 << 24);
+    let mut prover_channel_1 = MyFSProverChannel::new(PrngKeccak256::new());
+    let mut pdata1 = vec![0; 8];
+    prng.random_bytes(&mut pdata1);
+    let _ = prover_channel_1.send_bytes(&pdata1);
 
-//     let prng = PrngKeccak256::new();
-//     let mut prover_channel_2 = MyFSProverChannel::new(prng);
-//     let pdata2 = prover_channel_2.draw_byte_vector(8);
-//     prover_channel_2.send_bytes(&pdata2);
+    let work_bits = 15;
+    let _ = prover_channel_1.apply_proof_of_work(work_bits);
+    let pow_value_1 = prover_channel_1.draw_number(1 << 24);
 
-//     prover_channel_2.apply_proof_of_work(work_bits);
-//     let pow_value_2 = prover_channel_2.recv_number(1 << 24);
+    let mut prover_channel_2 = MyFSProverChannel::new(PrngKeccak256::new());
+    let mut pdata2 = vec![0; 8];
+    prng.random_bytes(&mut pdata2);
+    let _ = prover_channel_2.send_bytes(&pdata2);
 
-//     assert_ne!(pow_value_1, pow_value_2);
-// }
+    let _ = prover_channel_2.apply_proof_of_work(work_bits);
+    let pow_value_2 = prover_channel_2.draw_number(1 << 24);
 
-// #[test]
-// fn proof_of_work_zero_bits() {
-//     let prng = PrngKeccak256::new();
-//     let mut prover_channel_1 = MyFSProverChannel::new(prng);
+    assert_ne!(pow_value_1, pow_value_2);
+}
 
-//     prover_channel_1.apply_proof_of_work(0);
-//     let pow_value_1 = prover_channel_1.recv_number(1 << 24);
+#[test]
+fn proof_of_work_zero_bits() {
+    let mut prover_channel_1 = MyFSProverChannel::new(PrngKeccak256::new());
 
-//     let prng = PrngKeccak256::new();
-//     let mut prover_channel_2 = MyFSProverChannel::new(prng);
-//     let pow_value_2 = prover_channel_2.recv_number(1 << 24);
+    let _ = prover_channel_1.apply_proof_of_work(0);
+    let pow_value_1 = prover_channel_1.draw_number(1 << 24);
 
-//     assert_eq!(pow_value_1, pow_value_2);
+    let mut prover_channel_2 = MyFSProverChannel::new(PrngKeccak256::new());
+    let pow_value_2 = prover_channel_2.draw_number(1 << 24);
 
-//     let proof = prover_channel_1.get_proof();
-//     let prng = PrngKeccak256::new();
-//     let mut verifier_channel = MyFSVerifierChannel::new(prng, proof);
+    assert_eq!(pow_value_1, pow_value_2);
 
-//     verifier_channel.apply_proof_of_work(0);
-//     let pow_value_3 = verifier_channel.send_number(1 << 24);
-//     assert_eq!(pow_value_1, pow_value_3);
-// }
+    let proof = prover_channel_1.get_proof();
+    let mut verifier_channel = MyFSVerifierChannel::new(PrngKeccak256::new(), proof);
+
+    let _ = verifier_channel.apply_proof_of_work(0);
+    let pow_value_3 = verifier_channel.draw_number(1 << 24);
+    assert_eq!(pow_value_1, pow_value_3);
+}
 
 #[test]
 fn sending_consistent_with_receiving_random_bytes() {

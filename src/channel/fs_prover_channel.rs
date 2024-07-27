@@ -1,6 +1,7 @@
+use crate::channel::pow::ProofOfWorkProver;
 use crate::channel::{Channel, ChannelStates, FSChannel, ProverChannel};
 use crate::randomness::prng::Prng;
-use ark_ff::{BigInt, BigInteger, PrimeField};
+use ark_ff::{BigInteger, PrimeField};
 use num_bigint::BigUint;
 use sha3::digest::{Digest, Output};
 use std::marker::PhantomData;
@@ -91,11 +92,15 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
 
 impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSProverChannel<F, D, P> {
     fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
-        Ok(())
-    }
+        if security_bits == 0 {
+            return Ok(());
+        }
 
-    fn is_end_of_proof(&self) -> bool {
-        true
+        let worker = ProofOfWorkProver::<D>::default();
+        // TODO : remove magic number ( thread count , log_chunk_size )
+        let pow = worker.prove(&self.prng.prng_state(), security_bits, 1, 20);
+        self.send_data(&pow)?;
+        Ok(())
     }
 }
 
@@ -121,6 +126,12 @@ impl<F: PrimeField, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, 
             self.prng.mix_seed_with_bytes(&bytes);
         }
 
+        Ok(())
+    }
+
+    fn send_data(&mut self, data: &[u8]) -> Result<(), anyhow::Error> {
+        self.send_bytes(data)?;
+        self.states.increment_data_count();
         Ok(())
     }
 

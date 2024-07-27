@@ -34,6 +34,10 @@ impl ChannelStates {
     pub fn increment_field_element_count(&mut self, n: usize) {
         self.field_element_count += n;
     }
+
+    pub fn increment_data_count(&mut self) {
+        self.data_count += 1;
+    }
 }
 
 impl fmt::Display for ChannelStates {

@@ -1,3 +1,4 @@
+use crate::channel::pow::ProofOfWorkVerifier;
 use crate::channel::{Channel, ChannelStates, FSChannel, VerifierChannel};
 use crate::randomness::prng::Prng;
 use ark_ff::PrimeField;
@@ -100,14 +101,14 @@ impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSVerifierChannel<F, D, P>
             return Ok(());
         }
 
-        // TODO : apply proof of work
-        //let prev_state = self.prng.clone();
+        let worker = ProofOfWorkVerifier::<D>::default();
+        let witness = self.recv_data(ProofOfWorkVerifier::<D>::NONCE_BYTES)?;
+        // TODO : remove magic number ( thread count , log_chunk_size )
 
-        Ok(())
-    }
-
-    fn is_end_of_proof(&self) -> bool {
-        self.proof_read_index >= self.proof.len()
+        match worker.verify(&self.proof, security_bits, &witness) {
+            true => return Ok(()),
+            false => return Err(anyhow::anyhow!("Wrong proof of work.")),
+        };
     }
 }
 
@@ -117,7 +118,7 @@ impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F,
     fn recv_felts(&mut self, n: usize) -> Result<Vec<Self::Field>, anyhow::Error> {
         let mut felts = Vec::with_capacity(n);
         let chunk_bytes_size = ((Self::Field::MODULUS_BIT_SIZE + 7) / 8) as usize;
-        let raw_bytes: Vec<u8> = self.recv_bytes(n * chunk_bytes_size).unwrap();
+        let raw_bytes: Vec<u8> = self.recv_bytes(n * chunk_bytes_size)?;
 
         for chunk in raw_bytes.chunks_exact(chunk_bytes_size) {
             let felt = Self::Field::from_be_bytes_mod_order(&chunk);
@@ -128,10 +129,9 @@ impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F,
     }
 
     fn recv_bytes(&mut self, n: usize) -> Result<Vec<u8>, anyhow::Error> {
-        assert!(
-            self.proof_read_index + n <= self.proof.len(),
-            "Proof too short."
-        );
+        if self.proof_read_index + n > self.proof.len() {
+            return Err(anyhow::anyhow!("Proof too short."));
+        }
 
         let raw_bytes = &self.proof[self.proof_read_index..self.proof_read_index + n];
         self.proof_read_index += n;
@@ -142,9 +142,15 @@ impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F,
         Ok(raw_bytes.to_vec())
     }
 
+    fn recv_data(&mut self, n: usize) -> Result<Vec<u8>, anyhow::Error> {
+        let bytes = self.recv_bytes(n)?;
+        self.states.increment_data_count();
+        Ok(bytes)
+    }
+
     fn recv_commit_hash(&mut self) -> Result<Output<Self::Digest>, anyhow::Error> {
         let size = <Self::Digest as OutputSizeUser>::output_size();
-        let bytes = self.recv_bytes(size).unwrap();
+        let bytes = self.recv_bytes(size)?;
 
         let commitment = GenericArray::clone_from_slice(&bytes.as_slice());
 
@@ -155,7 +161,7 @@ impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F,
 
     fn recv_decommit_node(&mut self) -> Result<Output<Self::Digest>, anyhow::Error> {
         let size = <Self::Digest as OutputSizeUser>::output_size();
-        let bytes = self.recv_bytes(size).unwrap();
+        let bytes = self.recv_bytes(size)?;
 
         let decommitment = GenericArray::clone_from_slice(&bytes.as_slice());
 

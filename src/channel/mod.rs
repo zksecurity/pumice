@@ -10,7 +10,6 @@ use ark_ff::PrimeField;
 use channel_states::ChannelStates;
 use sha3::digest::{Digest, Output};
 
-#[allow(dead_code)]
 trait Channel {
     type Field: PrimeField;
 
@@ -31,8 +30,6 @@ trait Channel {
 
 trait FSChannel: Channel {
     fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error>;
-
-    fn is_end_of_proof(&self) -> bool;
 }
 
 trait VerifierChannel: Channel {
@@ -41,6 +38,8 @@ trait VerifierChannel: Channel {
     fn recv_felts(&mut self, n: usize) -> Result<Vec<Self::Field>, anyhow::Error>;
 
     fn recv_bytes(&mut self, n: usize) -> Result<Vec<u8>, anyhow::Error>;
+
+    fn recv_data(&mut self, n: usize) -> Result<Vec<u8>, anyhow::Error>;
 
     fn recv_commit_hash(&mut self) -> Result<Output<Self::Digest>, anyhow::Error>;
 
@@ -53,6 +52,8 @@ trait ProverChannel: Channel {
     fn send_felts(&mut self, felts: &[Self::Field]) -> Result<(), anyhow::Error>;
 
     fn send_bytes(&mut self, bytes: &[u8]) -> Result<(), anyhow::Error>;
+
+    fn send_data(&mut self, data: &[u8]) -> Result<(), anyhow::Error>;
 
     fn send_commit_hash(&mut self, commmitment: Output<Self::Digest>) -> Result<(), anyhow::Error>;
 

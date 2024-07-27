@@ -8,11 +8,18 @@ use std::{
     thread,
 };
 
+#[derive(Default)]
 pub struct ProofOfWorkProver<D: Digest> {
     _hash: std::marker::PhantomData<D>,
 }
 
 impl<D: Digest> ProofOfWorkProver<D> {
+    pub fn default() -> Self {
+        Self {
+            _hash: std::marker::PhantomData,
+        }
+    }
+
     // TODO : Implement task manager
     pub fn prove(
         &self,
@@ -115,12 +122,19 @@ fn search_chunk<D: Digest>(
     None
 }
 
+#[derive(Default)]
 pub struct ProofOfWorkVerifier<D: Digest> {
     _hash: std::marker::PhantomData<D>,
 }
 
 impl<D: Digest> ProofOfWorkVerifier<D> {
     pub const NONCE_BYTES: usize = std::mem::size_of::<u64>();
+
+    pub fn default() -> Self {
+        Self {
+            _hash: std::marker::PhantomData,
+        }
+    }
 
     pub fn verify(&self, seed: &[u8], work_bits: usize, nonce_bytes: &[u8]) -> bool {
         assert!(work_bits > 0, "At least one bits of work requires.");
