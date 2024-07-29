@@ -5,6 +5,8 @@ use num_bigint::BigUint;
 use randomness::Prng;
 use sha3::digest::{Digest, Output};
 use std::marker::PhantomData;
+use std::ops::Div;
+use std::sync::OnceLock;
 
 pub struct FSProverChannel<F: PrimeField, D: Digest, P: Prng> {
     pub _ph: PhantomData<(F, D)>,
@@ -24,8 +26,27 @@ impl<F: PrimeField, D: Digest, P: Prng> FSProverChannel<F, D, P> {
     }
 }
 
+impl<F: PrimeField, D: Digest, P: Prng> FSProverChannel<F, D, P> {
+    fn modulus() -> &'static BigUint {
+        static MODULUS: OnceLock<BigUint> = OnceLock::new();
+        MODULUS.get_or_init(|| F::MODULUS.into())
+    }
+
+    fn max_divislble() -> &'static BigUint {
+        static MAX_VALUE: OnceLock<BigUint> = OnceLock::new();
+        MAX_VALUE.get_or_init(|| {
+            let modulus = F::MODULUS.into();
+            let size: usize = ((F::MODULUS_BIT_SIZE + 7) / 8) as usize;
+            let max = BigUint::from_bytes_be(&vec![0xff; size]);
+            let quotient = max.div(&modulus);
+            quotient * modulus
+        })
+    }
+}
+
 impl<F: PrimeField, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
     type Field = F;
+    type FieldHash = D;
 
     fn draw_number(&mut self, upper_bound: u64) -> u64 {
         assert!(
@@ -50,26 +71,13 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
             "Prover can't receive randomness after query phase has begun."
         );
 
-        // from stone-prover/src/starkware/algebra/fields/big_prime_constants.h
-        //   static constexpr ValueType kMaxDivisible = 0xf8000000000000000000000000000000000000000007c000000000000000001f_Z;
-        let max_divisible = BigUint::parse_bytes(
-            b"f8000000000000000000000000000000000000000007c000000000000000001f",
-            16,
-        )
-        .unwrap();
-        let mod_felt252 = BigUint::parse_bytes(
-            b"800000000000000000000000000000000000000000040000000000000000001",
-            16,
-        )
-        .unwrap();
-
         let mut raw_bytes: Vec<u8>;
         let mut random_biguint: BigUint;
         loop {
             raw_bytes = self.draw_bytes(((Self::Field::MODULUS_BIT_SIZE + 7) / 8) as usize);
             random_biguint = BigUint::from_bytes_be(&raw_bytes);
-            if random_biguint < max_divisible {
-                random_biguint = random_biguint.modpow(&BigUint::from(1u64), &mod_felt252);
+            if random_biguint < *Self::max_divislble() {
+                random_biguint = random_biguint.modpow(&BigUint::from(1u64), Self::modulus());
                 break;
             }
         }
@@ -91,6 +99,8 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
 }
 
 impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSProverChannel<F, D, P> {
+    type PowHash = P;
+
     fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
         if security_bits == 0 {
             return Ok(());
@@ -105,8 +115,6 @@ impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSProverChannel<F, D, P> {
 }
 
 impl<F: PrimeField, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, P> {
-    type Digest = D;
-
     fn send_felts(&mut self, felts: &[Self::Field]) -> Result<(), anyhow::Error> {
         let mut raw_bytes = vec![0u8; 0];
         for &felem in felts {
@@ -135,7 +143,10 @@ impl<F: PrimeField, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, 
         Ok(())
     }
 
-    fn send_commit_hash(&mut self, commitment: Output<Self::Digest>) -> Result<(), anyhow::Error> {
+    fn send_commit_hash(
+        &mut self,
+        commitment: Output<Self::FieldHash>,
+    ) -> Result<(), anyhow::Error> {
         self.send_bytes(commitment.as_slice())?;
         self.states.increment_commitment_count();
         self.states.increment_hash_count();
@@ -144,7 +155,7 @@ impl<F: PrimeField, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, 
 
     fn send_decommit_node(
         &mut self,
-        decommitment: Output<Self::Digest>,
+        decommitment: Output<Self::FieldHash>,
     ) -> Result<(), anyhow::Error> {
         self.send_bytes(decommitment.as_slice())?;
         self.states.increment_hash_count();

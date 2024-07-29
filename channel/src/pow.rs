@@ -104,6 +104,7 @@ impl<D: Digest> ProofOfWorkProver<D> {
     }
 }
 
+#[allow(clippy::needless_borrows_for_generic_args)]
 fn search_chunk<D: Digest>(
     nonce_start: u64,
     chunk_size: u64,

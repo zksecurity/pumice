@@ -29,22 +29,25 @@ fn constant_keccak_channel() {
     let mut verifier_channel = MyFSVerifierChannel::new(prng_v, prover_channel.get_proof());
 
     // values are calculated from stone-prover/src/starkware/channel/noninteractive_channel_test.cc
-    // using PrimeFieldElement<252, 3>
+    // - ConstantKeccakChannelTest
     let random_felem_v1 = verifier_channel.draw_felem();
+    // Mont form of 0x7f097aaa40a3109067011986ae40f1ce97a01f4f1a72d80a52821f317504992_Z
     let expected_felem_v1 = Felt252::from_be_bytes_mod_order(&hex!(
-        "01f75714e70bf92f1a472085588006caf99aa605bb062098f25af56f9cb988dd"
+        "01f75714e70bf7a81a472085588006caf99aa605bb0be098f25af56f9cb988dd"
     ));
     assert_eq!(random_felem_v1, expected_felem_v1);
 
     let random_felem_v2 = verifier_channel.draw_felem();
+    // Mont form of 0x18bcafdd60fc70e5e8a9a18687135d0bf1a355d9882969a6b3619e56bf2d49d_Z
     let expected_felem_v2 = Felt252::from_be_bytes_mod_order(&hex!(
-        "060b22b317393cd9509829cf22b8379cd9607c2328363f64ac34f89d0cc6b679"
+        "060b22b317393ca6509829cf22b8379cd9607c232836ff64ac34f89d0cc6b679"
     ));
     assert_eq!(random_felem_v2, expected_felem_v2);
 
     let random_felem_v3 = verifier_channel.draw_felem();
+    // Mont form of 0x2f06b17e08bc409b945b951de8102653dc48a143b87d09b6c95587679816d02_Z
     let expected_felem_v3 = Felt252::from_be_bytes_mod_order(&hex!(
-        "06225ab6b4b37f0eb3bb2d694ff09fda59ae3daeafb17c93db11ddfb7511a59b"
+        "06225ab6b4b37edbb3bb2d694ff09fda59ae3daeafb23c93db11ddfb7511a59b"
     ));
     assert_eq!(random_felem_v3, expected_felem_v3);
 }

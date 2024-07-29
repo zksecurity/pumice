@@ -6,6 +6,8 @@ use randomness::Prng;
 use sha3::digest::generic_array::GenericArray;
 use sha3::digest::{Digest, Output, OutputSizeUser};
 use std::marker::PhantomData;
+use std::ops::Div;
+use std::sync::OnceLock;
 
 pub struct FSVerifierChannel<F: PrimeField, D: Digest, P: Prng> {
     pub _ph: PhantomData<(F, D)>,
@@ -28,8 +30,27 @@ impl<F: PrimeField, D: Digest, P: Prng> FSVerifierChannel<F, D, P> {
     }
 }
 
+impl<F: PrimeField, D: Digest, P: Prng> FSVerifierChannel<F, D, P> {
+    fn modulus() -> &'static BigUint {
+        static MODULUS: OnceLock<BigUint> = OnceLock::new();
+        MODULUS.get_or_init(|| F::MODULUS.into())
+    }
+
+    fn max_divislble() -> &'static BigUint {
+        static MAX_VALUE: OnceLock<BigUint> = OnceLock::new();
+        MAX_VALUE.get_or_init(|| {
+            let modulus = F::MODULUS.into();
+            let size: usize = ((F::MODULUS_BIT_SIZE + 7) / 8) as usize;
+            let max = BigUint::from_bytes_be(&vec![0xff; size]);
+            let quotient = max.div(&modulus);
+            quotient * modulus
+        })
+    }
+}
+
 impl<F: PrimeField, D: Digest, P: Prng> Channel for FSVerifierChannel<F, D, P> {
     type Field = F;
+    type FieldHash = D;
 
     fn draw_number(&mut self, upper_bound: u64) -> u64 {
         assert!(
@@ -54,26 +75,13 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSVerifierChannel<F, D, P> {
             "Verifier can't send randomness after query phase has begun."
         );
 
-        // from stone-prover/src/starkware/algebra/fields/big_prime_constants.h
-        //   static constexpr ValueType kMaxDivisible = 0xf8000000000000000000000000000000000000000007c000000000000000001f_Z;
-        let max_divisible = BigUint::parse_bytes(
-            b"f8000000000000000000000000000000000000000007c000000000000000001f",
-            16,
-        )
-        .unwrap();
-        let mod_felt252 = BigUint::parse_bytes(
-            b"800000000000000000000000000000000000000000040000000000000000001",
-            16,
-        )
-        .unwrap();
-
         let mut raw_bytes: Vec<u8>;
         let mut random_biguint: BigUint;
         loop {
             raw_bytes = self.draw_bytes(((Self::Field::MODULUS_BIT_SIZE + 7) / 8) as usize);
             random_biguint = BigUint::from_bytes_be(&raw_bytes);
-            if random_biguint < max_divisible {
-                random_biguint = random_biguint.modpow(&BigUint::from(1u64), &mod_felt252);
+            if random_biguint < *Self::max_divislble() {
+                random_biguint = random_biguint.modpow(&BigUint::from(1u64), Self::modulus());
                 break;
             }
         }
@@ -96,6 +104,8 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSVerifierChannel<F, D, P> {
 }
 
 impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSVerifierChannel<F, D, P> {
+    type PowHash = P;
+
     fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
         if security_bits == 0 {
             return Ok(());
@@ -113,8 +123,6 @@ impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSVerifierChannel<F, D, P>
 }
 
 impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F, D, P> {
-    type Digest = D;
-
     fn recv_felts(&mut self, n: usize) -> Result<Vec<Self::Field>, anyhow::Error> {
         let mut felts = Vec::with_capacity(n);
         let chunk_bytes_size = ((Self::Field::MODULUS_BIT_SIZE + 7) / 8) as usize;
@@ -148,8 +156,8 @@ impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F,
         Ok(bytes)
     }
 
-    fn recv_commit_hash(&mut self) -> Result<Output<Self::Digest>, anyhow::Error> {
-        let size = <Self::Digest as OutputSizeUser>::output_size();
+    fn recv_commit_hash(&mut self) -> Result<Output<Self::FieldHash>, anyhow::Error> {
+        let size = <Self::FieldHash as OutputSizeUser>::output_size();
         let bytes = self.recv_bytes(size)?;
 
         let commitment = GenericArray::clone_from_slice(bytes.as_slice());
@@ -159,8 +167,8 @@ impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F,
         Ok(commitment)
     }
 
-    fn recv_decommit_node(&mut self) -> Result<Output<Self::Digest>, anyhow::Error> {
-        let size = <Self::Digest as OutputSizeUser>::output_size();
+    fn recv_decommit_node(&mut self) -> Result<Output<Self::FieldHash>, anyhow::Error> {
+        let size = <Self::FieldHash as OutputSizeUser>::output_size();
         let bytes = self.recv_bytes(size)?;
 
         let decommitment = GenericArray::clone_from_slice(bytes.as_slice());
