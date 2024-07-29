@@ -44,14 +44,14 @@ impl HashChain {
         }
     }
 
-    pub fn reseed(&mut self, public_input: &[u8]) {
-        let result = keccak256!(public_input);
-        let mut hash_bytes = [0u8; KECCAK256_DIGEST_NUM_BYTES];
-        hash_bytes.copy_from_slice(&result);
-        self.digest = hash_bytes;
-        self.num_spare_bytes = 0;
-        self.counter = 0;
-    }
+    // pub fn reseed(&mut self, public_input: &[u8]) {
+    //     let result = keccak256!(public_input);
+    //     let mut hash_bytes = [0u8; KECCAK256_DIGEST_NUM_BYTES];
+    //     hash_bytes.copy_from_slice(&result);
+    //     self.digest = hash_bytes;
+    //     self.num_spare_bytes = 0;
+    //     self.counter = 0;
+    // }
 
     pub fn random_bytes(&mut self, random_bytes_out: &mut [u8]) {
         for chunk in random_bytes_out.chunks_mut(KECCAK256_DIGEST_NUM_BYTES) {
@@ -112,6 +112,7 @@ impl HashChain {
         hash_bytes
     }
 
+    #[allow(dead_code)]
     pub fn update_hash_chain(&mut self, raw_bytes: &[u8]) {
         let seed_increment: u64 = 0;
         self.mix_seed_with_bytes(raw_bytes, seed_increment);

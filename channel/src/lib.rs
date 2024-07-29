@@ -10,6 +10,7 @@ mod tests;
 use ark_ff::PrimeField;
 use sha3::digest::{Digest, Output};
 
+#[allow(dead_code)]
 trait Channel {
     type Field: PrimeField;
     type FieldHash: Digest;
@@ -29,12 +30,14 @@ trait Channel {
     fn draw_bytes(&mut self, n: usize) -> Vec<u8>;
 }
 
+#[allow(dead_code)]
 trait FSChannel: Channel {
     type PowHash;
 
     fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error>;
 }
 
+#[allow(dead_code)]
 trait VerifierChannel: Channel {
     fn recv_felts(&mut self, n: usize) -> Result<Vec<Self::Field>, anyhow::Error>;
 
@@ -47,6 +50,7 @@ trait VerifierChannel: Channel {
     fn recv_decommit_node(&mut self) -> Result<Output<Self::FieldHash>, anyhow::Error>;
 }
 
+#[allow(dead_code)]
 trait ProverChannel: Channel {
     fn send_felts(&mut self, felts: &[Self::Field]) -> Result<(), anyhow::Error>;
 

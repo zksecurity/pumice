@@ -26,6 +26,7 @@ impl<F: PrimeField, D: Digest, P: Prng> FSProverChannel<F, D, P> {
     }
 }
 
+#[allow(dead_code)]
 impl<F: PrimeField, D: Digest, P: Prng> FSProverChannel<F, D, P> {
     fn modulus() -> &'static BigUint {
         static MODULUS: OnceLock<BigUint> = OnceLock::new();
