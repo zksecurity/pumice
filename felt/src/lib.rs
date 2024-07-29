@@ -1,3 +1,5 @@
+use ark_ff::Zero;
+
 pub use container::Felt252;
 
 #[allow(non_local_definitions)]
@@ -14,6 +16,24 @@ mod container {
     #[small_subgroup_power = "192"]
     pub struct Felt252Config;
     pub type Felt252 = Fp256<MontBackend<Felt252Config, 4>>;
+}
+
+/// This method is used for testing / debugging purposes.
+/// It provides a convenient way to create a `Felt252` from a hex string.
+///
+/// Warning: this method is slow and will panic if the input is not a valid hex string.
+pub fn hex(hex: &str) -> Felt252 {
+    let mut chars = hex.chars();
+    assert!(chars.next().unwrap() == '0');
+    assert!(chars.next().unwrap() == 'x');
+
+    let mut res = Felt252::zero();
+    for digit in chars {
+        let val = u8::from_str_radix(&digit.to_string(), 0x10).unwrap();
+        res *= Felt252::from(0x10u64);
+        res += Felt252::from(val as u64);
+    }
+    res
 }
 
 #[cfg(test)]

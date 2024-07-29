@@ -47,6 +47,7 @@ impl<F: Field, H: Hasher<F>> MerkleTree<F, H> {
     ///
     /// Returns an error type for easier "monadic style" chaining.
     #[allow(dead_code)]
+    #[allow(clippy::result_unit_err)]
     pub fn verify_decommitment(
         &self,
         comm: H::Output,

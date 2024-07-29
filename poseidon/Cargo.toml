@@ -1,0 +1,15 @@
+[package]
+name = "poseidon"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ark-ff.workspace = true
+felt = { path = "../felt" }
+
+[dev-dependencies]
+criterion = "0.5.1"
+
+[[bench]]
+name = "poseidon"
+harness = false

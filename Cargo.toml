@@ -1,9 +1,8 @@
-[package]
-name = "pumice"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = ["felt", "merkle", "poseidon", "randomness", "channel"]
+resolver = "2"
 
-[dependencies]
+[workspace.dependencies]
 anyhow = "1.0.86"
 ark-ff = "0.4.2"
 ark-poly = "0.4.2"

@@ -1,8 +1,8 @@
-use crate::channel::pow::ProofOfWorkVerifier;
-use crate::channel::{Channel, ChannelStates, FSChannel, VerifierChannel};
-use crate::randomness::prng::Prng;
+use crate::pow::ProofOfWorkVerifier;
+use crate::{channel_states::ChannelStates, Channel, FSChannel, VerifierChannel};
 use ark_ff::PrimeField;
 use num_bigint::BigUint;
+use randomness::Prng;
 use sha3::digest::generic_array::GenericArray;
 use sha3::digest::{Digest, Output, OutputSizeUser};
 use std::marker::PhantomData;

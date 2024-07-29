@@ -1,13 +1,11 @@
 use super::fs_prover_channel::FSProverChannel;
 use super::fs_verifier_channel::FSVerifierChannel;
 use super::{Channel, FSChannel, ProverChannel, VerifierChannel};
-use crate::{
-    randomness::prng::{Prng, PrngKeccak256, PrngOnlyForTest},
-    Felt252,
-};
 use ark_ff::PrimeField;
 use blake2::Blake2s256;
+use felt::Felt252;
 use hex_literal::hex;
+use randomness::{Prng, PrngKeccak256, PrngOnlyForTest};
 use sha3::digest::generic_array::GenericArray;
 use sha3::digest::OutputSizeUser;
 use sha3::Sha3_256;

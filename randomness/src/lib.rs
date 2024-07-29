@@ -1,4 +1,6 @@
-use crate::randomness::hash_chain::HashChain;
+mod hash_chain;
+
+use crate::hash_chain::HashChain;
 use ark_ff::BigInteger;
 use ark_ff::PrimeField;
 use std::collections::HashSet;

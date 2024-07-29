@@ -7,7 +7,6 @@ pub mod pow;
 mod tests;
 
 use ark_ff::PrimeField;
-use channel_states::ChannelStates;
 use sha3::digest::{Digest, Output};
 
 trait Channel {

@@ -1,8 +1,8 @@
-use crate::channel::pow::ProofOfWorkProver;
-use crate::channel::{Channel, ChannelStates, FSChannel, ProverChannel};
-use crate::randomness::prng::Prng;
+use crate::pow::ProofOfWorkProver;
+use crate::{channel_states::ChannelStates, Channel, FSChannel, ProverChannel};
 use ark_ff::{BigInteger, PrimeField};
 use num_bigint::BigUint;
+use randomness::Prng;
 use sha3::digest::{Digest, Output};
 use std::marker::PhantomData;
 
@@ -158,9 +158,9 @@ impl<F: PrimeField, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, 
 
 #[cfg(test)]
 mod tests {
-    use crate::channel::fs_prover_channel::{Channel, FSProverChannel, ProverChannel};
-    use crate::felt252::Felt252;
-    use crate::randomness::prng::{Prng, PrngKeccak256};
+    use crate::fs_prover_channel::{Channel, FSProverChannel, ProverChannel};
+    use felt::Felt252;
+    use randomness::{Prng, PrngKeccak256};
     use sha3::Sha3_256;
 
     type MyFSProverChannel = FSProverChannel<Felt252, Sha3_256, PrngKeccak256>;

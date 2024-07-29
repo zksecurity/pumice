@@ -1,0 +1,9 @@
+[package]
+name = "randomness"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ark-ff.workspace = true
+sha3.workspace = true
+lazy_static.workspace = true
