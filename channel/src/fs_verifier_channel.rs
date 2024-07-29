@@ -101,14 +101,14 @@ impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSVerifierChannel<F, D, P>
             return Ok(());
         }
 
-        let worker = ProofOfWorkVerifier::<D>::default();
+        let worker: ProofOfWorkVerifier<D> = Default::default();
         let witness = self.recv_data(ProofOfWorkVerifier::<D>::NONCE_BYTES)?;
         // TODO : remove magic number ( thread count , log_chunk_size )
 
         match worker.verify(&self.proof, security_bits, &witness) {
-            true => return Ok(()),
-            false => return Err(anyhow::anyhow!("Wrong proof of work.")),
-        };
+            true => Ok(()),
+            false => Err(anyhow::anyhow!("Wrong proof of work.")),
+        }
     }
 }
 
@@ -121,7 +121,7 @@ impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F,
         let raw_bytes: Vec<u8> = self.recv_bytes(n * chunk_bytes_size)?;
 
         for chunk in raw_bytes.chunks_exact(chunk_bytes_size) {
-            let felt = Self::Field::from_be_bytes_mod_order(&chunk);
+            let felt = Self::Field::from_be_bytes_mod_order(chunk);
             felts.push(felt);
         }
 
@@ -136,7 +136,7 @@ impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F,
         let raw_bytes = &self.proof[self.proof_read_index..self.proof_read_index + n];
         self.proof_read_index += n;
         if !self.states.is_query_phase() {
-            self.prng.mix_seed_with_bytes(&raw_bytes);
+            self.prng.mix_seed_with_bytes(raw_bytes);
         }
         self.states.increment_byte_count(raw_bytes.len());
         Ok(raw_bytes.to_vec())
@@ -152,7 +152,7 @@ impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F,
         let size = <Self::Digest as OutputSizeUser>::output_size();
         let bytes = self.recv_bytes(size)?;
 
-        let commitment = GenericArray::clone_from_slice(&bytes.as_slice());
+        let commitment = GenericArray::clone_from_slice(bytes.as_slice());
 
         self.states.increment_commitment_count();
         self.states.increment_hash_count();
@@ -163,7 +163,7 @@ impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F,
         let size = <Self::Digest as OutputSizeUser>::output_size();
         let bytes = self.recv_bytes(size)?;
 
-        let decommitment = GenericArray::clone_from_slice(&bytes.as_slice());
+        let decommitment = GenericArray::clone_from_slice(bytes.as_slice());
 
         self.states.increment_hash_count();
         Ok(decommitment)

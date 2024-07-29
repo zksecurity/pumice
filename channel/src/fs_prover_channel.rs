@@ -123,7 +123,7 @@ impl<F: PrimeField, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, 
         self.proof.extend_from_slice(bytes);
 
         if !self.states.is_query_phase() {
-            self.prng.mix_seed_with_bytes(&bytes);
+            self.prng.mix_seed_with_bytes(bytes);
         }
 
         Ok(())

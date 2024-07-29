@@ -103,7 +103,7 @@ impl Prng for PrngKeccak256 {
 
     fn new_with_seed(seed: &[u8]) -> Self {
         PrngKeccak256 {
-            hash_chain: HashChain::new_with_public_input(&seed),
+            hash_chain: HashChain::new_with_public_input(seed),
         }
     }
 
@@ -141,7 +141,7 @@ impl Prng for PrngKeccak256 {
 impl PrngOnlyForTest for PrngKeccak256 {
     fn uniform_bigint<B: BigInteger>(&mut self, min: B, max: B) -> B {
         assert!(min <= max, "Invalid interval");
-        let mut range = max.clone();
+        let mut range = max;
         range.sub_with_borrow(&min);
         let mut random_value: B;
 
@@ -158,8 +158,8 @@ impl PrngOnlyForTest for PrngKeccak256 {
             if remaining_bits != 0 {
                 bytes[full_bytes] &= (1 << remaining_bits) - 1;
             }
-            for i in (full_bytes + 1)..bytes.len() {
-                bytes[i] = 0;
+            for byte in &mut bytes.iter_mut().skip(full_bytes + 1) {
+                *byte = 0;
             }
 
             // modify bytes to bool array

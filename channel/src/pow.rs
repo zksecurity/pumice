@@ -8,18 +8,19 @@ use std::{
     thread,
 };
 
-#[derive(Default)]
 pub struct ProofOfWorkProver<D: Digest> {
     _hash: std::marker::PhantomData<D>,
 }
 
-impl<D: Digest> ProofOfWorkProver<D> {
-    pub fn default() -> Self {
+impl<D: Digest> Default for ProofOfWorkProver<D> {
+    fn default() -> Self {
         Self {
             _hash: std::marker::PhantomData,
         }
     }
+}
 
+impl<D: Digest> ProofOfWorkProver<D> {
     // TODO : Implement task manager
     pub fn prove(
         &self,
@@ -96,9 +97,9 @@ impl<D: Digest> ProofOfWorkProver<D> {
 
     fn init_hash(&self, seed: &[u8], work_bits: usize) -> D {
         let mut hasher = D::new();
-        hasher.update(&[0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xed]);
+        hasher.update([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xed]);
         hasher.update(seed);
-        hasher.update(&[work_bits as u8]);
+        hasher.update([work_bits as u8]);
         hasher
     }
 }
@@ -122,19 +123,20 @@ fn search_chunk<D: Digest>(
     None
 }
 
-#[derive(Default)]
 pub struct ProofOfWorkVerifier<D: Digest> {
     _hash: std::marker::PhantomData<D>,
 }
 
-impl<D: Digest> ProofOfWorkVerifier<D> {
-    pub const NONCE_BYTES: usize = std::mem::size_of::<u64>();
-
-    pub fn default() -> Self {
+impl<D: Digest> Default for ProofOfWorkVerifier<D> {
+    fn default() -> Self {
         Self {
             _hash: std::marker::PhantomData,
         }
     }
+}
+
+impl<D: Digest> ProofOfWorkVerifier<D> {
+    pub const NONCE_BYTES: usize = std::mem::size_of::<u64>();
 
     pub fn verify(&self, seed: &[u8], work_bits: usize, nonce_bytes: &[u8]) -> bool {
         assert!(work_bits > 0, "At least one bits of work requires.");
@@ -157,9 +159,9 @@ impl<D: Digest> ProofOfWorkVerifier<D> {
 
     fn init_hash(&self, seed: &[u8], work_bits: usize) -> D {
         let mut hasher = D::new();
-        hasher.update(&[0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xed]);
+        hasher.update([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xed]);
         hasher.update(seed);
-        hasher.update(&[work_bits as u8]);
+        hasher.update([work_bits as u8]);
         hasher
     }
 }
