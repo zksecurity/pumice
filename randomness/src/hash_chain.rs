@@ -33,14 +33,9 @@ impl Default for HashChain {
 
 impl HashChain {
     pub fn new_with_public_input(public_input: &[u8]) -> Self {
-        let result = keccak256!(public_input);
-        let mut hash_bytes = [0u8; KECCAK256_DIGEST_NUM_BYTES];
-        hash_bytes.copy_from_slice(&result);
         Self {
-            digest: hash_bytes,
-            spare_bytes: [0u8; KECCAK256_DIGEST_NUM_BYTES * 2],
-            num_spare_bytes: 0,
-            counter: 0,
+            digest: keccak256!(public_input),
+            ..Default::default()
         }
     }
 

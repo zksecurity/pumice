@@ -19,14 +19,6 @@ trait Channel {
 
     fn draw_felem(&mut self) -> Self::Field;
 
-    // fn draw_felts(&mut self, n: usize) -> Vec<Self::Field> {
-    //     let mut felems = Vec::with_capacity(n);
-    //     for _ in 0..n {
-    //         felems.push(self.draw_felem());
-    //     }
-    //     felems
-    // }
-
     fn draw_bytes(&mut self, n: usize) -> Vec<u8>;
 }
 

@@ -1,4 +1,4 @@
-use crate::pow::ProofOfWorkProver;
+use crate::pow::{ProofOfWorkProver, POW_DEFAULT_CHUNK_SIZE};
 use crate::{channel_states::ChannelStates, Channel, FSChannel, ProverChannel};
 use ark_ff::{BigInteger, PrimeField};
 use num_bigint::BigUint;
@@ -37,7 +37,7 @@ impl<F: PrimeField, D: Digest, P: Prng> FSProverChannel<F, D, P> {
         static MAX_VALUE: OnceLock<BigUint> = OnceLock::new();
         MAX_VALUE.get_or_init(|| {
             let modulus = F::MODULUS.into();
-            let size: usize = ((F::MODULUS_BIT_SIZE + 7) / 8) as usize;
+            let size = F::MODULUS_BIT_SIZE.div_ceil(8) as usize;
             let max = BigUint::from_bytes_be(&vec![0xff; size]);
             let quotient = max.div(&modulus);
             quotient * modulus
@@ -75,10 +75,10 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
         let mut raw_bytes: Vec<u8>;
         let mut random_biguint: BigUint;
         loop {
-            raw_bytes = self.draw_bytes(((Self::Field::MODULUS_BIT_SIZE + 7) / 8) as usize);
+            raw_bytes = self.draw_bytes(Self::Field::MODULUS_BIT_SIZE.div_ceil(8) as usize);
             random_biguint = BigUint::from_bytes_be(&raw_bytes);
             if random_biguint < *Self::max_divislble() {
-                random_biguint = random_biguint.modpow(&BigUint::from(1u64), Self::modulus());
+                random_biguint %= Self::modulus();
                 break;
             }
         }
@@ -108,8 +108,11 @@ impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSProverChannel<F, D, P> {
         }
 
         let worker = ProofOfWorkProver::<D>::default();
-        // TODO : remove magic number ( thread count , log_chunk_size )
-        let pow = worker.prove(&self.prng.prng_state(), security_bits, 1, 20);
+        let pow = worker.prove(
+            &self.prng.prng_state(),
+            security_bits,
+            POW_DEFAULT_CHUNK_SIZE,
+        );
         self.send_data(&pow)?;
         Ok(())
     }

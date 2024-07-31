@@ -1,4 +1,5 @@
 use sha3::digest::{Digest, OutputSizeUser};
+use std::mem::size_of;
 use std::vec::Vec;
 use std::{
     sync::{
@@ -7,6 +8,16 @@ use std::{
     },
     thread,
 };
+
+#[inline]
+fn pow_check<D: Digest>(bytes: &[u8]) -> u64 {
+    let hash = D::new().chain_update(bytes).finalize();
+    let digest_word = u64::from_be_bytes(hash.as_slice()[..size_of::<u64>()].try_into().unwrap());
+    digest_word
+}
+
+pub const POW_HASH_PREFIX: [u8; 8] = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xed];
+pub const POW_DEFAULT_CHUNK_SIZE: u64 = 20;
 
 pub struct ProofOfWorkProver<D: Digest> {
     _hash: std::marker::PhantomData<D>,
@@ -22,13 +33,7 @@ impl<D: Digest> Default for ProofOfWorkProver<D> {
 
 impl<D: Digest> ProofOfWorkProver<D> {
     // TODO : Implement task manager
-    pub fn prove(
-        &self,
-        seed: &[u8],
-        work_bits: usize,
-        try_thread_count: usize,
-        log_chunk_size: u64,
-    ) -> Vec<u8> {
+    pub fn prove(&self, seed: &[u8], work_bits: usize, log_chunk_size: u64) -> Vec<u8> {
         assert!(work_bits > 0, "At least one bits of work requires.");
         assert!(work_bits <= 64, "Too many bits of work requested");
 
@@ -41,8 +46,7 @@ impl<D: Digest> ProofOfWorkProver<D> {
         let work_limit = 1u64 << (64 - work_bits);
         let chunk_size = 1u64 << log_chunk_size;
         let thread_count = if work_bits > log_chunk_size.try_into().unwrap() {
-            // TODO : use taskmgr threads count
-            try_thread_count
+            thread::available_parallelism().map_or(1, |p| p.get())
         } else {
             1
         };
@@ -55,13 +59,13 @@ impl<D: Digest> ProofOfWorkProver<D> {
         for thread_id in 0..thread_count {
             let next_chunk_to_search = Arc::clone(&next_chunk_to_search);
             let lowest_nonce_found = Arc::clone(&lowest_nonce_found);
-            let mut thread_bytes: Vec<u8> = bytes.clone();
+            let thread_bytes: Vec<u8> = bytes.clone();
 
             handles.push(thread::spawn(move || {
                 let mut nonce_start = thread_id as u64 * chunk_size;
                 loop {
                     if let Some(nonce) =
-                        search_chunk::<D>(nonce_start, chunk_size, &mut thread_bytes, work_limit)
+                        search_chunk::<D>(nonce_start, chunk_size, &thread_bytes, work_limit)
                     {
                         let mut curr_nonce = lowest_nonce_found.load(Ordering::Relaxed);
                         while nonce < curr_nonce {
@@ -97,7 +101,7 @@ impl<D: Digest> ProofOfWorkProver<D> {
 
     fn init_hash(&self, seed: &[u8], work_bits: usize) -> D {
         let mut hasher = D::new();
-        hasher.update([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xed]);
+        hasher.update(POW_HASH_PREFIX);
         hasher.update(seed);
         hasher.update([work_bits as u8]);
         hasher
@@ -108,15 +112,15 @@ impl<D: Digest> ProofOfWorkProver<D> {
 fn search_chunk<D: Digest>(
     nonce_start: u64,
     chunk_size: u64,
-    thread_bytes: &mut [u8],
+    thread_bytes: &[u8],
     work_limit: u64,
 ) -> Option<u64> {
-    let thread_len = thread_bytes.len();
+    let mut local_bytes = thread_bytes.to_vec();
+    let local_bytes_len = local_bytes.len();
     for nonce in nonce_start..nonce_start + chunk_size {
-        thread_bytes[thread_len - 8..].copy_from_slice(&nonce.to_be_bytes());
+        local_bytes[local_bytes_len - size_of::<u64>()..].copy_from_slice(&nonce.to_be_bytes());
 
-        let hash = D::new().chain_update(&thread_bytes).finalize();
-        let digest_word = u64::from_be_bytes(hash.as_slice()[..8].try_into().unwrap());
+        let digest_word = pow_check::<D>(&local_bytes);
         if digest_word < work_limit {
             return Some(nonce);
         }
@@ -152,15 +156,13 @@ impl<D: Digest> ProofOfWorkVerifier<D> {
 
         let work_limit = 1u64 << (64 - work_bits);
 
-        let hash = D::new().chain_update(&bytes).finalize();
-        let digest_word = u64::from_be_bytes(hash.as_slice()[..8].try_into().unwrap());
-
+        let digest_word = pow_check::<D>(&bytes);
         digest_word < work_limit
     }
 
     fn init_hash(&self, seed: &[u8], work_bits: usize) -> D {
         let mut hasher = D::new();
-        hasher.update([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xed]);
+        hasher.update(POW_HASH_PREFIX);
         hasher.update(seed);
         hasher.update([work_bits as u8]);
         hasher
@@ -191,10 +193,9 @@ mod tests {
         };
 
         let work_bits = 15;
-        let thread_count = 1;
         let log_chunk_size = 20;
         let seed = get_prng_state();
-        let witness = pow_prover.prove(&seed, work_bits, thread_count, log_chunk_size);
+        let witness = pow_prover.prove(&seed, work_bits, log_chunk_size);
 
         assert!(pow_verifier.verify(&seed, work_bits, &witness));
     }
@@ -209,10 +210,9 @@ mod tests {
         };
 
         let work_bits = 15;
-        let thread_count = 1;
         let log_chunk_size = 20;
         let seed = get_prng_state();
-        let witness = pow_prover.prove(&seed, work_bits, thread_count, log_chunk_size);
+        let witness = pow_prover.prove(&seed, work_bits, log_chunk_size);
 
         assert!(!pow_verifier.verify(&seed, work_bits + 1, &witness));
         assert!(!pow_verifier.verify(&seed, work_bits - 1, &witness));
@@ -228,10 +228,9 @@ mod tests {
         };
 
         let work_bits = 15;
-        let thread_count = 1;
         let log_chunk_size = 20;
         let seed = get_prng_state();
-        let mut witness = pow_prover.prove(&seed, work_bits, thread_count, log_chunk_size);
+        let mut witness = pow_prover.prove(&seed, work_bits, log_chunk_size);
 
         for byte_index in 0..witness.len() {
             for bit_index in 0..8 {
@@ -252,10 +251,9 @@ mod tests {
         };
 
         let work_bits = 18;
-        let thread_count = 10;
         let log_chunk_size = 15;
         let seed = get_prng_state();
-        let witness = pow_prover.prove(&seed, work_bits, thread_count, log_chunk_size);
+        let witness = pow_prover.prove(&seed, work_bits, log_chunk_size);
 
         assert!(pow_verifier.verify(&seed, work_bits, &witness));
     }

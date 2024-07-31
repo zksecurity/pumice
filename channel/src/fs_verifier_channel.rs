@@ -5,6 +5,7 @@ use num_bigint::BigUint;
 use randomness::Prng;
 use sha3::digest::generic_array::GenericArray;
 use sha3::digest::{Digest, Output, OutputSizeUser};
+use std::io::{Cursor, Read};
 use std::marker::PhantomData;
 use std::ops::Div;
 use std::sync::OnceLock;
@@ -12,9 +13,7 @@ use std::sync::OnceLock;
 pub struct FSVerifierChannel<F: PrimeField, D: Digest, P: Prng> {
     pub _ph: PhantomData<(F, D)>,
     pub prng: P,
-    // TODO : turn this into an iterator
-    pub proof: Vec<u8>,
-    pub proof_read_index: usize,
+    pub proof: Cursor<Vec<u8>>,
     pub states: ChannelStates,
 }
 
@@ -23,8 +22,7 @@ impl<F: PrimeField, D: Digest, P: Prng> FSVerifierChannel<F, D, P> {
         Self {
             _ph: PhantomData,
             prng,
-            proof,
-            proof_read_index: 0,
+            proof: Cursor::new(proof),
             states: Default::default(),
         }
     }
@@ -79,10 +77,10 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSVerifierChannel<F, D, P> {
         let mut raw_bytes: Vec<u8>;
         let mut random_biguint: BigUint;
         loop {
-            raw_bytes = self.draw_bytes(((Self::Field::MODULUS_BIT_SIZE + 7) / 8) as usize);
+            raw_bytes = self.draw_bytes(Self::Field::MODULUS_BIT_SIZE.div_ceil(8) as usize);
             random_biguint = BigUint::from_bytes_be(&raw_bytes);
             if random_biguint < *Self::max_divislble() {
-                random_biguint = random_biguint.modpow(&BigUint::from(1u64), Self::modulus());
+                random_biguint %= Self::modulus();
                 break;
             }
         }
@@ -116,7 +114,7 @@ impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSVerifierChannel<F, D, P>
         let witness = self.recv_data(ProofOfWorkVerifier::<D>::NONCE_BYTES)?;
         // TODO : remove magic number ( thread count , log_chunk_size )
 
-        match worker.verify(&self.proof, security_bits, &witness) {
+        match worker.verify(self.proof.get_ref(), security_bits, &witness) {
             true => Ok(()),
             false => Err(anyhow::anyhow!("Wrong proof of work.")),
         }
@@ -138,17 +136,17 @@ impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F,
     }
 
     fn recv_bytes(&mut self, n: usize) -> Result<Vec<u8>, anyhow::Error> {
-        if self.proof_read_index + n > self.proof.len() {
+        let mut raw_bytes = vec![0u8; n];
+        let bytes_read = self.proof.read(&mut raw_bytes)?;
+        if bytes_read < n {
             return Err(anyhow::anyhow!("Proof too short."));
         }
 
-        let raw_bytes = &self.proof[self.proof_read_index..self.proof_read_index + n];
-        self.proof_read_index += n;
         if !self.states.is_query_phase() {
-            self.prng.mix_seed_with_bytes(raw_bytes);
+            self.prng.mix_seed_with_bytes(&raw_bytes);
         }
         self.states.increment_byte_count(raw_bytes.len());
-        Ok(raw_bytes.to_vec())
+        Ok(raw_bytes)
     }
 
     fn recv_data(&mut self, n: usize) -> Result<Vec<u8>, anyhow::Error> {
