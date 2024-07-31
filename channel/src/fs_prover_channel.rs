@@ -100,14 +100,14 @@ impl<F: PrimeField, P: Prng> Channel for FSProverChannel<F, P> {
 }
 
 impl<F: PrimeField, P: Prng> FSChannel for FSProverChannel<F, P> {
-    type PowHash = P;
+    type PowHash = P::DigestType;
 
     fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
         if security_bits == 0 {
             return Ok(());
         }
 
-        let worker = ProofOfWorkProver::<Self::FieldHash>::default();
+        let worker = ProofOfWorkProver::<Self::PowHash>::default();
         let pow = worker.prove(
             &self.prng.prng_state(),
             security_bits,

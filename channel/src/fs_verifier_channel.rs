@@ -103,16 +103,15 @@ impl<F: PrimeField, P: Prng> Channel for FSVerifierChannel<F, P> {
 }
 
 impl<F: PrimeField, P: Prng> FSChannel for FSVerifierChannel<F, P> {
-    type PowHash = P;
+    type PowHash = P::DigestType;
 
     fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
         if security_bits == 0 {
             return Ok(());
         }
 
-        let worker: ProofOfWorkVerifier<Self::FieldHash> = Default::default();
-        let witness = self.recv_data(ProofOfWorkVerifier::<Self::FieldHash>::NONCE_BYTES)?;
-        // TODO : remove magic number ( thread count , log_chunk_size )
+        let worker: ProofOfWorkVerifier<Self::PowHash> = Default::default();
+        let witness = self.recv_data(ProofOfWorkVerifier::<Self::PowHash>::NONCE_BYTES)?;
 
         match worker.verify(self.proof.get_ref(), security_bits, &witness) {
             true => Ok(()),
