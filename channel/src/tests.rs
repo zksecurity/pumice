@@ -8,10 +8,9 @@ use hex_literal::hex;
 use randomness::{Prng, PrngKeccak256, PrngOnlyForTest};
 use sha3::digest::generic_array::GenericArray;
 use sha3::digest::OutputSizeUser;
-use sha3::Sha3_256;
 
-type MyFSVerifierChannel = FSVerifierChannel<Felt252, Sha3_256, PrngKeccak256>;
-type MyFSProverChannel = FSProverChannel<Felt252, Sha3_256, PrngKeccak256>;
+type MyFSVerifierChannel = FSVerifierChannel<Felt252, PrngKeccak256>;
+type MyFSProverChannel = FSProverChannel<Felt252, PrngKeccak256>;
 
 fn generate_commitment(
     prng: &mut PrngKeccak256,

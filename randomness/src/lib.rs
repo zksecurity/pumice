@@ -3,13 +3,18 @@ mod hash_chain;
 use crate::hash_chain::HashChain;
 use ark_ff::BigInteger;
 use ark_ff::PrimeField;
+use sha3::Digest;
 use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::vec::Vec;
 
+pub use sha3::Sha3_256;
+
 const INCREMENT_SEED: u64 = 1;
 
 pub trait Prng {
+    type DigestType: Digest;
+
     fn new() -> Self;
     fn new_with_seed(seed: &[u8]) -> Self;
 
@@ -21,7 +26,6 @@ pub trait Prng {
 }
 
 pub trait PrngOnlyForTest: Prng {
-    // TODO : implement numeric generic version e.g u8, u16, i32
     fn uniform_int(&mut self, range: std::ops::RangeInclusive<u64>) -> u64 {
         let (min, max) = (*range.start(), *range.end());
         assert!(min <= max, "Invalid interval");
@@ -94,6 +98,8 @@ pub struct PrngKeccak256 {
 
 // TODO : Implement Rng trait
 impl Prng for PrngKeccak256 {
+    type DigestType = Sha3_256;
+
     fn new() -> Self {
         let seed = [0u8; 32];
         PrngKeccak256 {
@@ -110,13 +116,6 @@ impl Prng for PrngKeccak256 {
     fn random_bytes(&mut self, random_bytes_out: &mut [u8]) {
         self.hash_chain.random_bytes(random_bytes_out);
     }
-
-    // template <typename OtherHashT>
-    // OtherHashT RandomHash() {
-    //   return OtherHashT::InitDigestTo(RandomByteVector(OtherHashT::kDigestNumBytes));
-    // }
-
-    // pub fn random_other_hash
 
     fn mix_seed_with_bytes(&mut self, raw_bytes: &[u8]) {
         self.hash_chain

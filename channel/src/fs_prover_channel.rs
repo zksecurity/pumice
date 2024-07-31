@@ -3,19 +3,19 @@ use crate::{channel_states::ChannelStates, Channel, FSChannel, ProverChannel};
 use ark_ff::{BigInteger, PrimeField};
 use num_bigint::BigUint;
 use randomness::Prng;
-use sha3::digest::{Digest, Output};
+use sha3::digest::Output;
 use std::marker::PhantomData;
 use std::ops::Div;
 use std::sync::OnceLock;
 
-pub struct FSProverChannel<F: PrimeField, D: Digest, P: Prng> {
-    pub _ph: PhantomData<(F, D)>,
+pub struct FSProverChannel<F: PrimeField, P: Prng> {
+    pub _ph: PhantomData<F>,
     pub prng: P,
     pub proof: Vec<u8>,
     pub states: ChannelStates,
 }
 
-impl<F: PrimeField, D: Digest, P: Prng> FSProverChannel<F, D, P> {
+impl<F: PrimeField, P: Prng> FSProverChannel<F, P> {
     pub fn new(prng: P) -> Self {
         Self {
             _ph: PhantomData,
@@ -27,7 +27,7 @@ impl<F: PrimeField, D: Digest, P: Prng> FSProverChannel<F, D, P> {
 }
 
 #[allow(dead_code)]
-impl<F: PrimeField, D: Digest, P: Prng> FSProverChannel<F, D, P> {
+impl<F: PrimeField, P: Prng> FSProverChannel<F, P> {
     fn modulus() -> &'static BigUint {
         static MODULUS: OnceLock<BigUint> = OnceLock::new();
         MODULUS.get_or_init(|| F::MODULUS.into())
@@ -45,9 +45,9 @@ impl<F: PrimeField, D: Digest, P: Prng> FSProverChannel<F, D, P> {
     }
 }
 
-impl<F: PrimeField, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
+impl<F: PrimeField, P: Prng> Channel for FSProverChannel<F, P> {
     type Field = F;
-    type FieldHash = D;
+    type FieldHash = P::DigestType;
 
     fn draw_number(&mut self, upper_bound: u64) -> u64 {
         assert!(
@@ -99,7 +99,7 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
     }
 }
 
-impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSProverChannel<F, D, P> {
+impl<F: PrimeField, P: Prng> FSChannel for FSProverChannel<F, P> {
     type PowHash = P;
 
     fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
@@ -107,7 +107,7 @@ impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSProverChannel<F, D, P> {
             return Ok(());
         }
 
-        let worker = ProofOfWorkProver::<D>::default();
+        let worker = ProofOfWorkProver::<Self::FieldHash>::default();
         let pow = worker.prove(
             &self.prng.prng_state(),
             security_bits,
@@ -118,7 +118,7 @@ impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSProverChannel<F, D, P> {
     }
 }
 
-impl<F: PrimeField, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, P> {
+impl<F: PrimeField, P: Prng> ProverChannel for FSProverChannel<F, P> {
     fn send_felts(&mut self, felts: &[Self::Field]) -> Result<(), anyhow::Error> {
         let mut raw_bytes = vec![0u8; 0];
         for &felem in felts {
@@ -176,9 +176,8 @@ mod tests {
     use crate::fs_prover_channel::{Channel, FSProverChannel, ProverChannel};
     use felt::Felt252;
     use randomness::{Prng, PrngKeccak256};
-    use sha3::Sha3_256;
 
-    type MyFSProverChannel = FSProverChannel<Felt252, Sha3_256, PrngKeccak256>;
+    type MyFSProverChannel = FSProverChannel<Felt252, PrngKeccak256>;
 
     #[test]
     fn test_draw_number() {

@@ -4,20 +4,20 @@ use ark_ff::PrimeField;
 use num_bigint::BigUint;
 use randomness::Prng;
 use sha3::digest::generic_array::GenericArray;
-use sha3::digest::{Digest, Output, OutputSizeUser};
+use sha3::digest::{Output, OutputSizeUser};
 use std::io::{Cursor, Read};
 use std::marker::PhantomData;
 use std::ops::Div;
 use std::sync::OnceLock;
 
-pub struct FSVerifierChannel<F: PrimeField, D: Digest, P: Prng> {
-    pub _ph: PhantomData<(F, D)>,
+pub struct FSVerifierChannel<F: PrimeField, P: Prng> {
+    pub _ph: PhantomData<F>,
     pub prng: P,
     pub proof: Cursor<Vec<u8>>,
     pub states: ChannelStates,
 }
 
-impl<F: PrimeField, D: Digest, P: Prng> FSVerifierChannel<F, D, P> {
+impl<F: PrimeField, P: Prng> FSVerifierChannel<F, P> {
     pub fn new(prng: P, proof: Vec<u8>) -> Self {
         Self {
             _ph: PhantomData,
@@ -29,7 +29,7 @@ impl<F: PrimeField, D: Digest, P: Prng> FSVerifierChannel<F, D, P> {
 }
 
 #[allow(dead_code)]
-impl<F: PrimeField, D: Digest, P: Prng> FSVerifierChannel<F, D, P> {
+impl<F: PrimeField, P: Prng> FSVerifierChannel<F, P> {
     fn modulus() -> &'static BigUint {
         static MODULUS: OnceLock<BigUint> = OnceLock::new();
         MODULUS.get_or_init(|| F::MODULUS.into())
@@ -47,9 +47,9 @@ impl<F: PrimeField, D: Digest, P: Prng> FSVerifierChannel<F, D, P> {
     }
 }
 
-impl<F: PrimeField, D: Digest, P: Prng> Channel for FSVerifierChannel<F, D, P> {
+impl<F: PrimeField, P: Prng> Channel for FSVerifierChannel<F, P> {
     type Field = F;
-    type FieldHash = D;
+    type FieldHash = P::DigestType;
 
     fn draw_number(&mut self, upper_bound: u64) -> u64 {
         assert!(
@@ -102,7 +102,7 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSVerifierChannel<F, D, P> {
     }
 }
 
-impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSVerifierChannel<F, D, P> {
+impl<F: PrimeField, P: Prng> FSChannel for FSVerifierChannel<F, P> {
     type PowHash = P;
 
     fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
@@ -110,8 +110,8 @@ impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSVerifierChannel<F, D, P>
             return Ok(());
         }
 
-        let worker: ProofOfWorkVerifier<D> = Default::default();
-        let witness = self.recv_data(ProofOfWorkVerifier::<D>::NONCE_BYTES)?;
+        let worker: ProofOfWorkVerifier<Self::FieldHash> = Default::default();
+        let witness = self.recv_data(ProofOfWorkVerifier::<Self::FieldHash>::NONCE_BYTES)?;
         // TODO : remove magic number ( thread count , log_chunk_size )
 
         match worker.verify(self.proof.get_ref(), security_bits, &witness) {
@@ -121,7 +121,7 @@ impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSVerifierChannel<F, D, P>
     }
 }
 
-impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F, D, P> {
+impl<F: PrimeField, P: Prng> VerifierChannel for FSVerifierChannel<F, P> {
     fn recv_felts(&mut self, n: usize) -> Result<Vec<Self::Field>, anyhow::Error> {
         let mut felts = Vec::with_capacity(n);
         let chunk_bytes_size = ((Self::Field::MODULUS_BIT_SIZE + 7) / 8) as usize;
