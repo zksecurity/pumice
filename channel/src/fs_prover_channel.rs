@@ -175,7 +175,7 @@ impl<F: PrimeField, P: Prng> ProverChannel for FSProverChannel<F, P> {
 mod tests {
     use crate::fs_prover_channel::{Channel, FSProverChannel, ProverChannel};
     use felt::Felt252;
-    use randomness::{Prng, PrngKeccak256};
+    use randomness::{keccak256::PrngKeccak256, Prng};
 
     type MyFSProverChannel = FSProverChannel<Felt252, PrngKeccak256>;
 

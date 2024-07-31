@@ -5,7 +5,7 @@ use ark_ff::PrimeField;
 use blake2::Blake2s256;
 use felt::Felt252;
 use hex_literal::hex;
-use randomness::{Prng, PrngKeccak256, PrngOnlyForTest};
+use randomness::{keccak256::PrngKeccak256, Prng, PrngOnlyForTest};
 use sha3::digest::generic_array::GenericArray;
 use sha3::digest::OutputSizeUser;
 
