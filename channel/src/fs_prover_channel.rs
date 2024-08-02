@@ -1,21 +1,22 @@
 use crate::pow::{ProofOfWorkProver, POW_DEFAULT_CHUNK_SIZE};
 use crate::{channel_states::ChannelStates, Channel, FSChannel, ProverChannel};
 use ark_ff::{BigInteger, PrimeField};
+use generic_array::GenericArray;
 use num_bigint::BigUint;
 use randomness::Prng;
-use sha3::digest::Output;
+use sha3::Digest;
 use std::marker::PhantomData;
 use std::ops::Div;
 use std::sync::OnceLock;
 
-pub struct FSProverChannel<F: PrimeField, P: Prng> {
-    pub _ph: PhantomData<F>,
+pub struct FSProverChannel<F: PrimeField, P: Prng, W: Digest> {
+    pub _ph: PhantomData<(F, W)>,
     pub prng: P,
     pub proof: Vec<u8>,
     pub states: ChannelStates,
 }
 
-impl<F: PrimeField, P: Prng> FSProverChannel<F, P> {
+impl<F: PrimeField, P: Prng, W: Digest> FSProverChannel<F, P, W> {
     pub fn new(prng: P) -> Self {
         Self {
             _ph: PhantomData,
@@ -27,7 +28,7 @@ impl<F: PrimeField, P: Prng> FSProverChannel<F, P> {
 }
 
 #[allow(dead_code)]
-impl<F: PrimeField, P: Prng> FSProverChannel<F, P> {
+impl<F: PrimeField, P: Prng, W: Digest> FSProverChannel<F, P, W> {
     fn modulus() -> &'static BigUint {
         static MODULUS: OnceLock<BigUint> = OnceLock::new();
         MODULUS.get_or_init(|| F::MODULUS.into())
@@ -45,9 +46,9 @@ impl<F: PrimeField, P: Prng> FSProverChannel<F, P> {
     }
 }
 
-impl<F: PrimeField, P: Prng> Channel for FSProverChannel<F, P> {
+impl<F: PrimeField, P: Prng, W: Digest> Channel for FSProverChannel<F, P, W> {
     type Field = F;
-    type FieldHash = P::DigestType;
+    type Commitment = GenericArray<u8, P::CommitmentSize>;
 
     fn draw_number(&mut self, upper_bound: u64) -> u64 {
         assert!(
@@ -99,8 +100,8 @@ impl<F: PrimeField, P: Prng> Channel for FSProverChannel<F, P> {
     }
 }
 
-impl<F: PrimeField, P: Prng> FSChannel for FSProverChannel<F, P> {
-    type PowHash = P::DigestType;
+impl<F: PrimeField, P: Prng, W: Digest> FSChannel for FSProverChannel<F, P, W> {
+    type PowHash = W;
 
     fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
         if security_bits == 0 {
@@ -118,7 +119,7 @@ impl<F: PrimeField, P: Prng> FSChannel for FSProverChannel<F, P> {
     }
 }
 
-impl<F: PrimeField, P: Prng> ProverChannel for FSProverChannel<F, P> {
+impl<F: PrimeField, P: Prng, W: Digest> ProverChannel for FSProverChannel<F, P, W> {
     fn send_felts(&mut self, felts: &[Self::Field]) -> Result<(), anyhow::Error> {
         let mut raw_bytes = vec![0u8; 0];
         for &felem in felts {
@@ -147,21 +148,15 @@ impl<F: PrimeField, P: Prng> ProverChannel for FSProverChannel<F, P> {
         Ok(())
     }
 
-    fn send_commit_hash(
-        &mut self,
-        commitment: Output<Self::FieldHash>,
-    ) -> Result<(), anyhow::Error> {
-        self.send_bytes(commitment.as_slice())?;
+    fn send_commit_hash(&mut self, commitment: Self::Commitment) -> Result<(), anyhow::Error> {
+        self.send_bytes(commitment.as_ref())?;
         self.states.increment_commitment_count();
         self.states.increment_hash_count();
         Ok(())
     }
 
-    fn send_decommit_node(
-        &mut self,
-        decommitment: Output<Self::FieldHash>,
-    ) -> Result<(), anyhow::Error> {
-        self.send_bytes(decommitment.as_slice())?;
+    fn send_decommit_node(&mut self, decommitment: Self::Commitment) -> Result<(), anyhow::Error> {
+        self.send_bytes(decommitment.as_ref())?;
         self.states.increment_hash_count();
         Ok(())
     }
@@ -176,8 +171,9 @@ mod tests {
     use crate::fs_prover_channel::{Channel, FSProverChannel, ProverChannel};
     use felt::Felt252;
     use randomness::{keccak256::PrngKeccak256, Prng};
+    use sha3::Sha3_256;
 
-    type MyFSProverChannel = FSProverChannel<Felt252, PrngKeccak256>;
+    type MyFSProverChannel = FSProverChannel<Felt252, PrngKeccak256, Sha3_256>;
 
     #[test]
     fn test_draw_number() {

@@ -8,6 +8,7 @@ ark-ff.workspace = true
 sha3.workspace = true
 poseidon = { path = "../poseidon" }
 felt = { path = "../felt" }
+generic-array.workspace = true
 
 [dev-dependencies]
 lazy_static = "1.5.0"

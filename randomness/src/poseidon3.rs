@@ -3,6 +3,7 @@ use ark_ff::BigInteger;
 use ark_ff::Field;
 use ark_ff::PrimeField;
 use felt::Felt252;
+use generic_array::typenum::U32;
 use poseidon::FieldHasher;
 use poseidon::Poseidon3;
 use std::vec::Vec;
@@ -15,7 +16,7 @@ pub struct PrngPoseidon3<Felt252> {
 }
 
 impl Prng<Felt252> for PrngPoseidon3<Felt252> {
-    type DigestType = Sha3_256;
+    type CommitmentSize = U32;
 
     fn new() -> Self {
         PrngPoseidon3 {
@@ -51,10 +52,8 @@ impl Prng<Felt252> for PrngPoseidon3<Felt252> {
     }
 
     fn prng_state(&self) -> Vec<u8> {
-        let return_vec = self.state.into_bigint().to_bytes_be();
-        // only show state
-        // return_vec.extend(self.counter.into_bigint().to_bytes_be());
-        return_vec
+        // do not append counter to the state
+        self.state.into_bigint().to_bytes_be()
     }
 
     fn hash_name() -> &'static str {
@@ -67,7 +66,7 @@ impl Prng<Felt252> for PrngPoseidon3<Felt252> {
             "n_elements must be the number of bytes in the field size"
         );
 
-        let hash_result = Poseidon3::<Felt252>::pair(self.state.clone(), self.counter.clone());
+        let hash_result = Poseidon3::<Felt252>::pair(self.state, self.counter);
         hash_result.into_bigint().to_bytes_be()
     }
 }

@@ -2,22 +2,21 @@ use super::fs_prover_channel::FSProverChannel;
 use super::fs_verifier_channel::FSVerifierChannel;
 use super::{Channel, FSChannel, ProverChannel, VerifierChannel};
 use ark_ff::PrimeField;
-use blake2::Blake2s256;
 use felt::Felt252;
+use generic_array::GenericArray;
 use hex_literal::hex;
 use randomness::{keccak256::PrngKeccak256, Prng, PrngOnlyForTest};
-use sha3::digest::generic_array::GenericArray;
-use sha3::digest::OutputSizeUser;
+use sha3::Sha3_256;
 
-type MyFSVerifierChannel = FSVerifierChannel<Felt252, PrngKeccak256>;
-type MyFSProverChannel = FSProverChannel<Felt252, PrngKeccak256>;
+type MyFSVerifierChannel = FSVerifierChannel<Felt252, PrngKeccak256, Sha3_256>;
+type MyFSProverChannel = FSProverChannel<Felt252, PrngKeccak256, Sha3_256>;
 
-fn generate_commitment(
-    prng: &mut PrngKeccak256,
-) -> GenericArray<u8, <Blake2s256 as OutputSizeUser>::OutputSize> {
+type MyCommitmentSize = <PrngKeccak256 as Prng>::CommitmentSize;
+
+fn generate_commitment(prng: &mut PrngKeccak256) -> GenericArray<u8, MyCommitmentSize> {
     let mut raw_bytes = [0u8; 32];
     prng.random_bytes(&mut raw_bytes);
-    GenericArray::<u8, <Blake2s256 as OutputSizeUser>::OutputSize>::clone_from_slice(&raw_bytes)
+    GenericArray::try_from_iter(raw_bytes.into_iter()).unwrap()
 }
 
 #[test]

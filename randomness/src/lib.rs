@@ -4,12 +4,12 @@ pub mod poseidon3;
 
 use ark_ff::BigInteger;
 use ark_ff::PrimeField;
-use sha3::Digest;
+use generic_array::ArrayLength;
 use std::collections::HashSet;
 use std::vec::Vec;
 
 pub trait Prng<T = u8> {
-    type DigestType: Digest;
+    type CommitmentSize: ArrayLength;
 
     fn new() -> Self;
     fn new_with_seed(seed: &[T]) -> Self;

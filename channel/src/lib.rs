@@ -5,15 +5,16 @@ pub mod fs_verifier_channel;
 pub mod pow;
 
 #[cfg(test)]
-mod tests;
+mod test_keccak_channel;
+// #[cfg(test)]
+// mod test_poseidon3_channel;
 
 use ark_ff::PrimeField;
-use sha3::digest::{Digest, Output};
 
 #[allow(dead_code)]
 trait Channel {
     type Field: PrimeField;
-    type FieldHash: Digest;
+    type Commitment;
 
     fn draw_number(&mut self, bound: u64) -> u64;
 
@@ -37,9 +38,9 @@ trait VerifierChannel: Channel {
 
     fn recv_data(&mut self, n: usize) -> Result<Vec<u8>, anyhow::Error>;
 
-    fn recv_commit_hash(&mut self) -> Result<Output<Self::FieldHash>, anyhow::Error>;
+    fn recv_commit_hash(&mut self) -> Result<Self::Commitment, anyhow::Error>;
 
-    fn recv_decommit_node(&mut self) -> Result<Output<Self::FieldHash>, anyhow::Error>;
+    fn recv_decommit_node(&mut self) -> Result<Self::Commitment, anyhow::Error>;
 }
 
 #[allow(dead_code)]
@@ -50,15 +51,9 @@ trait ProverChannel: Channel {
 
     fn send_data(&mut self, data: &[u8]) -> Result<(), anyhow::Error>;
 
-    fn send_commit_hash(
-        &mut self,
-        commmitment: Output<Self::FieldHash>,
-    ) -> Result<(), anyhow::Error>;
+    fn send_commit_hash(&mut self, commmitment: Self::Commitment) -> Result<(), anyhow::Error>;
 
-    fn send_decommit_node(
-        &mut self,
-        decommitment: Output<Self::FieldHash>,
-    ) -> Result<(), anyhow::Error>;
+    fn send_decommit_node(&mut self, decommitment: Self::Commitment) -> Result<(), anyhow::Error>;
 
     fn get_proof(&self) -> Vec<u8>;
 }

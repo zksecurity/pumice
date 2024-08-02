@@ -1,23 +1,23 @@
 use crate::pow::ProofOfWorkVerifier;
 use crate::{channel_states::ChannelStates, Channel, FSChannel, VerifierChannel};
 use ark_ff::PrimeField;
+use generic_array::GenericArray;
 use num_bigint::BigUint;
 use randomness::Prng;
-use sha3::digest::generic_array::GenericArray;
-use sha3::digest::{Output, OutputSizeUser};
+use sha3::Digest;
 use std::io::{Cursor, Read};
 use std::marker::PhantomData;
 use std::ops::Div;
 use std::sync::OnceLock;
 
-pub struct FSVerifierChannel<F: PrimeField, P: Prng> {
-    pub _ph: PhantomData<F>,
+pub struct FSVerifierChannel<F: PrimeField, P: Prng, W: Digest> {
+    pub _ph: PhantomData<(F, W)>,
     pub prng: P,
     pub proof: Cursor<Vec<u8>>,
     pub states: ChannelStates,
 }
 
-impl<F: PrimeField, P: Prng> FSVerifierChannel<F, P> {
+impl<F: PrimeField, P: Prng, W: Digest> FSVerifierChannel<F, P, W> {
     pub fn new(prng: P, proof: Vec<u8>) -> Self {
         Self {
             _ph: PhantomData,
@@ -29,7 +29,7 @@ impl<F: PrimeField, P: Prng> FSVerifierChannel<F, P> {
 }
 
 #[allow(dead_code)]
-impl<F: PrimeField, P: Prng> FSVerifierChannel<F, P> {
+impl<F: PrimeField, P: Prng, W: Digest> FSVerifierChannel<F, P, W> {
     fn modulus() -> &'static BigUint {
         static MODULUS: OnceLock<BigUint> = OnceLock::new();
         MODULUS.get_or_init(|| F::MODULUS.into())
@@ -47,9 +47,9 @@ impl<F: PrimeField, P: Prng> FSVerifierChannel<F, P> {
     }
 }
 
-impl<F: PrimeField, P: Prng> Channel for FSVerifierChannel<F, P> {
+impl<F: PrimeField, P: Prng, W: Digest> Channel for FSVerifierChannel<F, P, W> {
     type Field = F;
-    type FieldHash = P::DigestType;
+    type Commitment = GenericArray<u8, P::CommitmentSize>;
 
     fn draw_number(&mut self, upper_bound: u64) -> u64 {
         assert!(
@@ -102,8 +102,8 @@ impl<F: PrimeField, P: Prng> Channel for FSVerifierChannel<F, P> {
     }
 }
 
-impl<F: PrimeField, P: Prng> FSChannel for FSVerifierChannel<F, P> {
-    type PowHash = P::DigestType;
+impl<F: PrimeField, P: Prng, W: Digest> FSChannel for FSVerifierChannel<F, P, W> {
+    type PowHash = W;
 
     fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
         if security_bits == 0 {
@@ -120,7 +120,7 @@ impl<F: PrimeField, P: Prng> FSChannel for FSVerifierChannel<F, P> {
     }
 }
 
-impl<F: PrimeField, P: Prng> VerifierChannel for FSVerifierChannel<F, P> {
+impl<F: PrimeField, P: Prng, W: Digest> VerifierChannel for FSVerifierChannel<F, P, W> {
     fn recv_felts(&mut self, n: usize) -> Result<Vec<Self::Field>, anyhow::Error> {
         let mut felts = Vec::with_capacity(n);
         let chunk_bytes_size = ((Self::Field::MODULUS_BIT_SIZE + 7) / 8) as usize;
@@ -154,22 +154,22 @@ impl<F: PrimeField, P: Prng> VerifierChannel for FSVerifierChannel<F, P> {
         Ok(bytes)
     }
 
-    fn recv_commit_hash(&mut self) -> Result<Output<Self::FieldHash>, anyhow::Error> {
-        let size = <Self::FieldHash as OutputSizeUser>::output_size();
+    fn recv_commit_hash(&mut self) -> Result<Self::Commitment, anyhow::Error> {
+        let size = std::mem::size_of::<Self::Commitment>();
         let bytes = self.recv_bytes(size)?;
 
-        let commitment = GenericArray::clone_from_slice(bytes.as_slice());
+        let commitment = GenericArray::try_from_iter(bytes).unwrap();
 
         self.states.increment_commitment_count();
         self.states.increment_hash_count();
         Ok(commitment)
     }
 
-    fn recv_decommit_node(&mut self) -> Result<Output<Self::FieldHash>, anyhow::Error> {
-        let size = <Self::FieldHash as OutputSizeUser>::output_size();
+    fn recv_decommit_node(&mut self) -> Result<Self::Commitment, anyhow::Error> {
+        let size = std::mem::size_of::<Self::Commitment>();
         let bytes = self.recv_bytes(size)?;
 
-        let decommitment = GenericArray::clone_from_slice(bytes.as_slice());
+        let decommitment = GenericArray::try_from_iter(bytes).unwrap();
 
         self.states.increment_hash_count();
         Ok(decommitment)

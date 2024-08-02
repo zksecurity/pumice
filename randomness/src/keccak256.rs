@@ -2,6 +2,7 @@ use crate::hash_chain::HashChain;
 use crate::{Prng, PrngOnlyForTest};
 use ark_ff::BigInteger;
 use ark_ff::PrimeField;
+use generic_array::typenum::U32;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::vec::Vec;
 
@@ -14,7 +15,7 @@ pub struct PrngKeccak256 {
 }
 
 impl Prng for PrngKeccak256 {
-    type DigestType = Sha3_256;
+    type CommitmentSize = U32;
 
     fn new() -> Self {
         let seed = [0u8; 32];
