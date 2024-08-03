@@ -4,10 +4,12 @@ pub mod fs_prover_channel;
 pub mod fs_verifier_channel;
 pub mod pow;
 
+// #[cfg(test)]
+// mod test;
 #[cfg(test)]
 mod test_keccak_channel;
-// #[cfg(test)]
-// mod test_poseidon3_channel;
+#[cfg(test)]
+mod test_poseidon3_channel;
 
 use ark_ff::PrimeField;
 
@@ -19,8 +21,6 @@ trait Channel {
     fn draw_number(&mut self, bound: u64) -> u64;
 
     fn draw_felem(&mut self) -> Self::Field;
-
-    fn draw_bytes(&mut self, n: usize) -> Vec<u8>;
 }
 
 #[allow(dead_code)]

@@ -1,7 +1,5 @@
 use crate::Prng;
-use ark_ff::BigInteger;
-use ark_ff::Field;
-use ark_ff::PrimeField;
+use ark_ff::{BigInteger, Field, PrimeField};
 use felt::Felt252;
 use generic_array::typenum::U32;
 use poseidon::FieldHasher;
@@ -10,12 +8,12 @@ use std::vec::Vec;
 
 pub use sha3::Sha3_256;
 
-pub struct PrngPoseidon3<Felt252> {
+pub struct PrngPoseidon3 {
     pub state: Felt252,
     pub counter: Felt252,
 }
 
-impl Prng<Felt252> for PrngPoseidon3<Felt252> {
+impl Prng for PrngPoseidon3 {
     type CommitmentSize = U32;
 
     fn new() -> Self {
@@ -25,17 +23,44 @@ impl Prng<Felt252> for PrngPoseidon3<Felt252> {
         }
     }
 
-    fn new_with_seed(seed: &[Felt252]) -> Self {
-        assert!(seed.len() == 2, "seed must be 2 felts");
+    fn new_with_seed(seed: &[u8]) -> Self {
+        let mut chunks = seed.chunks_exact(Felt252::MODULUS_BIT_SIZE.div_ceil(8) as usize);
+        assert!(chunks.len() == 1, "seed must be 1 field element");
         PrngPoseidon3 {
-            state: seed[0],
-            counter: seed[1],
+            state: Felt252::from_be_bytes_mod_order(chunks.next().unwrap()),
+            counter: Felt252::ZERO,
         }
     }
 
     fn random_bytes(&mut self, random_bytes_out: &mut [u8]) {
         let bytes = self.random_bytes_vec(random_bytes_out.len());
         random_bytes_out.copy_from_slice(&bytes);
+    }
+
+    fn random_bytes_vec(&mut self, n_elements: usize) -> Vec<u8> {
+        assert!(
+            n_elements == Felt252::MODULUS_BIT_SIZE.div_ceil(8) as usize,
+            "n_elements must be the number of bytes in the field size"
+        );
+
+        let hash_result = Poseidon3::<Felt252>::pair(self.state, self.counter);
+        self.counter += Felt252::ONE;
+        hash_result.into_bigint().to_bytes_be()
+    }
+
+    fn random_number(&mut self, upper_bound: u64) -> u64 {
+        let raw_bytes = self.random_bytes_vec(Felt252::MODULUS_BIT_SIZE.div_ceil(8) as usize);
+
+        assert!(
+            upper_bound < 0x0001_0000_0000_0000,
+            "Random number with too high an upper bound"
+        );
+
+        let number = Felt252::from_be_bytes_mod_order(&raw_bytes);
+        let big_int = number.into_bigint();
+        // get first u64 element of the big int
+        let first_u64: u64 = big_int.as_ref()[0];
+        first_u64 % upper_bound
     }
 
     fn mix_seed_with_bytes(&mut self, raw_bytes: &[u8]) {
@@ -58,15 +83,5 @@ impl Prng<Felt252> for PrngPoseidon3<Felt252> {
 
     fn hash_name() -> &'static str {
         "Poseidon3"
-    }
-
-    fn random_bytes_vec(&mut self, n_elements: usize) -> Vec<u8> {
-        assert!(
-            n_elements == Felt252::MODULUS_BIT_SIZE.div_ceil(8) as usize,
-            "n_elements must be the number of bytes in the field size"
-        );
-
-        let hash_result = Poseidon3::<Felt252>::pair(self.state, self.counter);
-        hash_result.into_bigint().to_bytes_be()
     }
 }

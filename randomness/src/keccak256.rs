@@ -34,6 +34,24 @@ impl Prng for PrngKeccak256 {
         self.hash_chain.random_bytes(random_bytes_out);
     }
 
+    fn random_bytes_vec(&mut self, n_elements: usize) -> Vec<u8> {
+        let mut return_vec = vec![0u8; n_elements];
+        self.random_bytes(&mut return_vec);
+        return_vec
+    }
+
+    fn random_number(&mut self, upper_bound: u64) -> u64 {
+        let raw_bytes = self.random_bytes_vec(std::mem::size_of::<u64>());
+        let number = u64::from_be_bytes(raw_bytes.try_into().unwrap());
+
+        assert!(
+            upper_bound < 0x0001_0000_0000_0000,
+            "Random number with too high an upper bound"
+        );
+
+        number % upper_bound
+    }
+
     fn mix_seed_with_bytes(&mut self, raw_bytes: &[u8]) {
         self.hash_chain
             .mix_seed_with_bytes(raw_bytes, INCREMENT_SEED);
@@ -45,12 +63,6 @@ impl Prng for PrngKeccak256 {
 
     fn hash_name() -> &'static str {
         "Keccak256"
-    }
-
-    fn random_bytes_vec(&mut self, n_elements: usize) -> Vec<u8> {
-        let mut return_vec = vec![0u8; n_elements];
-        self.random_bytes(&mut return_vec);
-        return_vec
     }
 }
 

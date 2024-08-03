@@ -56,15 +56,7 @@ impl<F: PrimeField, P: Prng, W: Digest> Channel for FSProverChannel<F, P, W> {
             "Prover can't receive randomness after query phase has begun."
         );
 
-        let raw_bytes = self.draw_bytes(std::mem::size_of::<u64>());
-        let number = u64::from_be_bytes(raw_bytes.try_into().unwrap());
-
-        assert!(
-            upper_bound < 0x0001_0000_0000_0000,
-            "Random number with too high an upper bound"
-        );
-
-        number % upper_bound
+        self.prng.random_number(upper_bound)
     }
 
     fn draw_felem(&mut self) -> Self::Field {
@@ -76,7 +68,9 @@ impl<F: PrimeField, P: Prng, W: Digest> Channel for FSProverChannel<F, P, W> {
         let mut raw_bytes: Vec<u8>;
         let mut random_biguint: BigUint;
         loop {
-            raw_bytes = self.draw_bytes(Self::Field::MODULUS_BIT_SIZE.div_ceil(8) as usize);
+            raw_bytes = self
+                .prng
+                .random_bytes_vec(Self::Field::MODULUS_BIT_SIZE.div_ceil(8) as usize);
             random_biguint = BigUint::from_bytes_be(&raw_bytes);
             if random_biguint < *Self::max_divislble() {
                 random_biguint %= Self::modulus();
@@ -90,13 +84,6 @@ impl<F: PrimeField, P: Prng, W: Digest> Channel for FSProverChannel<F, P, W> {
         .unwrap();
 
         field_element
-    }
-
-    #[inline]
-    fn draw_bytes(&mut self, n: usize) -> Vec<u8> {
-        let mut raw_bytes = vec![0u8; n];
-        self.prng.random_bytes(&mut raw_bytes);
-        raw_bytes
     }
 }
 
@@ -183,17 +170,6 @@ mod tests {
         let upper_bound = 100;
         let number = channel.draw_number(upper_bound);
         assert!(number < upper_bound);
-    }
-
-    #[test]
-    fn test_receiving_bytes() {
-        let prng = PrngKeccak256::new();
-        let mut channel = MyFSProverChannel::new(prng);
-
-        for &size in [4, 8, 16, 18, 32, 33, 63, 64, 65].iter() {
-            let bytes = channel.draw_bytes(size);
-            assert_eq!(bytes.len(), size);
-        }
     }
 
     #[test]
