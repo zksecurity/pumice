@@ -1,0 +1,17 @@
+[package]
+name = "channel"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ark-ff.workspace = true
+felt = { path = "../felt" }
+randomness = { path = "../randomness" }
+sha3.workspace = true
+anyhow.workspace = true
+num-bigint.workspace = true
+blake2.workspace = true
+
+[dev-dependencies]
+hex-literal.workspace = true
+rand = "0.8.5"
