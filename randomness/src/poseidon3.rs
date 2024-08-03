@@ -14,7 +14,7 @@ pub struct PrngPoseidon3 {
 }
 
 impl Prng for PrngPoseidon3 {
-    type CommitmentSize = U32;
+    type DigestSize = U32;
 
     fn new() -> Self {
         PrngPoseidon3 {
@@ -83,5 +83,9 @@ impl Prng for PrngPoseidon3 {
 
     fn hash_name() -> &'static str {
         "Poseidon3"
+    }
+
+    fn bytes_chunk_size() -> usize {
+        Felt252::MODULUS_BIT_SIZE.div_ceil(8) as usize
     }
 }

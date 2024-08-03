@@ -48,7 +48,7 @@ impl<F: PrimeField, P: Prng, W: Digest> FSProverChannel<F, P, W> {
 
 impl<F: PrimeField, P: Prng, W: Digest> Channel for FSProverChannel<F, P, W> {
     type Field = F;
-    type Commitment = GenericArray<u8, P::CommitmentSize>;
+    type Commitment = GenericArray<u8, P::DigestSize>;
 
     fn draw_number(&mut self, upper_bound: u64) -> u64 {
         assert!(
@@ -96,11 +96,17 @@ impl<F: PrimeField, P: Prng, W: Digest> FSChannel for FSProverChannel<F, P, W> {
         }
 
         let worker = ProofOfWorkProver::<Self::PowHash>::default();
-        let pow = worker.prove(
+        let mut pow = worker.prove(
             &self.prng.prng_state(),
             security_bits,
             POW_DEFAULT_CHUNK_SIZE,
         );
+
+        // Expand the nonce to be compatible with the size of felt
+        if pow.len() < P::bytes_chunk_size() {
+            pow.resize(P::bytes_chunk_size(), 0u8);
+        }
+
         self.send_data(&pow)?;
         Ok(())
     }
@@ -120,6 +126,13 @@ impl<F: PrimeField, P: Prng, W: Digest> ProverChannel for FSProverChannel<F, P, 
     }
 
     fn send_bytes(&mut self, bytes: &[u8]) -> Result<(), anyhow::Error> {
+        // XXX : should assert ?
+        if bytes.len() % P::bytes_chunk_size() != 0 {
+            return Err(anyhow::anyhow!(
+                "Number of bytes must be a multiple of the bytes chunk size."
+            ));
+        }
+
         self.proof.extend_from_slice(bytes);
 
         if !self.states.is_query_phase() {

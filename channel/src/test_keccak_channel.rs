@@ -5,18 +5,43 @@ use ark_ff::PrimeField;
 use felt::Felt252;
 use generic_array::GenericArray;
 use hex_literal::hex;
-use randomness::{keccak256::PrngKeccak256, Prng, PrngOnlyForTest};
+use rand::{Rng, RngCore};
+use randomness::{keccak256::PrngKeccak256, Prng};
 use sha3::Sha3_256;
 
 type TestFSVerifierChannel = FSVerifierChannel<Felt252, PrngKeccak256, Sha3_256>;
 type TestFSProverChannel = FSProverChannel<Felt252, PrngKeccak256, Sha3_256>;
 
-type TestCommitmentSize = <PrngKeccak256 as Prng>::CommitmentSize;
+type TestCommitmentSize = <PrngKeccak256 as Prng>::DigestSize;
 
-fn generate_commitment(prng: &mut PrngKeccak256) -> GenericArray<u8, TestCommitmentSize> {
+const DIGEST_NUM_BYTES: usize = Felt252::MODULUS_BIT_SIZE.div_ceil(8) as usize;
+
+fn generate_random_bytes(n_elements: usize) -> Vec<u8> {
+    let mut bytes = vec![0u8; n_elements];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    bytes
+}
+
+fn generate_prover_channel() -> TestFSProverChannel {
+    let prng = PrngKeccak256::new();
+    TestFSProverChannel::new(prng)
+}
+
+fn generate_verifier_channel(proof: Vec<u8>) -> TestFSVerifierChannel {
+    let prng = PrngKeccak256::new();
+    TestFSVerifierChannel::new(prng, proof)
+}
+
+fn generate_commitment() -> GenericArray<u8, TestCommitmentSize> {
     let mut raw_bytes = [0u8; 32];
-    prng.random_bytes(&mut raw_bytes);
+    rand::thread_rng().fill_bytes(&mut raw_bytes);
     GenericArray::try_from_iter(raw_bytes.into_iter()).unwrap()
+}
+
+fn generate_random_felem() -> Felt252 {
+    let mut raw_bytes = [0u8; DIGEST_NUM_BYTES];
+    rand::thread_rng().fill_bytes(&mut raw_bytes);
+    Felt252::from_be_bytes_mod_order(&raw_bytes)
 }
 
 #[test]
@@ -48,22 +73,24 @@ fn constant_keccak_channel() {
         "06225ab6b4b37edbb3bb2d694ff09fda59ae3daeafb23c93db11ddfb7511a59b"
     ));
     assert_eq!(random_felem_v3, expected_felem_v3);
+
+    let random_number_v1 = verifier_channel.draw_number(1 << 10);
+    let expected_number_v1 = 851;
+    assert_eq!(random_number_v1, expected_number_v1);
 }
 
 #[test]
 fn sending_felts_consistent_with_receiving() {
-    let mut prng = PrngKeccak256::new();
     let num_felts = 20;
-    let random_vec = prng.random_felts_vec::<Felt252>(num_felts);
+    let random_vec: Vec<Felt252> = (0..num_felts).map(|_| generate_random_felem()).collect();
 
-    //let prng_
-    let mut prover_channel = TestFSProverChannel::new(PrngKeccak256::new());
+    let mut prover_channel = generate_prover_channel();
     let result = prover_channel.send_felts(&random_vec);
     assert!(result.is_ok());
     let random_num_p = prover_channel.draw_number(1000);
     let proof = prover_channel.get_proof();
 
-    let mut verifier_channel = TestFSVerifierChannel::new(PrngKeccak256::new(), proof);
+    let mut verifier_channel = generate_verifier_channel(proof);
     //let mut verifier_output = vec![Felt252::zero(); 20];
     let verifier_output = verifier_channel.recv_felts(num_felts).unwrap();
     let random_num_v = verifier_channel.draw_number(1000);
@@ -80,12 +107,12 @@ fn sending_consistent_with_receiving_bytes() {
     let mut pdata2 = vec![0; 4];
     prng.random_bytes(&mut pdata2);
 
-    let mut prover_channel = TestFSProverChannel::new(PrngKeccak256::new());
+    let mut prover_channel = generate_prover_channel();
     let _ = prover_channel.send_bytes(&pdata1);
     let _ = prover_channel.send_bytes(&pdata2);
 
     let proof = prover_channel.get_proof();
-    let mut verifier_channel = TestFSVerifierChannel::new(PrngKeccak256::new(), proof);
+    let mut verifier_channel = generate_verifier_channel(proof);
 
     let vdata1 = verifier_channel.recv_bytes(8).unwrap();
     let vdata2 = verifier_channel.recv_bytes(4).unwrap();
@@ -96,30 +123,28 @@ fn sending_consistent_with_receiving_bytes() {
 
 #[test]
 fn proof_of_work() {
-    let mut prover_channel = TestFSProverChannel::new(PrngKeccak256::new());
+    let mut prover_channel = generate_prover_channel();
 
     let work_bits = 15;
     let _ = prover_channel.apply_proof_of_work(work_bits);
     let pow_value = prover_channel.draw_number(1 << 24);
 
-    let proof = prover_channel.get_proof();
-    let mut verifier_channel = TestFSVerifierChannel::new(PrngKeccak256::new(), proof.clone());
+    let mut verifier_channel = generate_verifier_channel(prover_channel.get_proof());
 
     let _ = verifier_channel.apply_proof_of_work(work_bits);
     assert_eq!(verifier_channel.draw_number(1 << 24), pow_value);
 
-    let mut verifier_channel_bad_1 =
-        TestFSVerifierChannel::new(PrngKeccak256::new(), proof.clone());
+    let mut verifier_channel_bad_1 = generate_verifier_channel(prover_channel.get_proof());
     assert!(verifier_channel_bad_1
         .apply_proof_of_work(work_bits + 1)
         .is_err());
 
-    let mut verifier_channel_bad2 = TestFSVerifierChannel::new(PrngKeccak256::new(), proof.clone());
+    let mut verifier_channel_bad2 = generate_verifier_channel(prover_channel.get_proof());
     assert!(verifier_channel_bad2
         .apply_proof_of_work(work_bits - 1)
         .is_err());
 
-    let mut nonpow_prover_channel = TestFSProverChannel::new(PrngKeccak256::new());
+    let mut nonpow_prover_channel = generate_prover_channel();
     assert_ne!(nonpow_prover_channel.draw_number(1 << 24), pow_value);
 }
 
@@ -127,7 +152,7 @@ fn proof_of_work() {
 fn proof_of_work_depends_on_state() {
     let mut prng = PrngKeccak256::new();
 
-    let mut prover_channel_1 = TestFSProverChannel::new(PrngKeccak256::new());
+    let mut prover_channel_1 = generate_prover_channel();
     let mut pdata1 = vec![0; 8];
     prng.random_bytes(&mut pdata1);
     let _ = prover_channel_1.send_bytes(&pdata1);
@@ -136,7 +161,7 @@ fn proof_of_work_depends_on_state() {
     let _ = prover_channel_1.apply_proof_of_work(work_bits);
     let pow_value_1 = prover_channel_1.draw_number(1 << 24);
 
-    let mut prover_channel_2 = TestFSProverChannel::new(PrngKeccak256::new());
+    let mut prover_channel_2 = generate_prover_channel();
     let mut pdata2 = vec![0; 8];
     prng.random_bytes(&mut pdata2);
     let _ = prover_channel_2.send_bytes(&pdata2);
@@ -149,18 +174,18 @@ fn proof_of_work_depends_on_state() {
 
 #[test]
 fn proof_of_work_zero_bits() {
-    let mut prover_channel_1 = TestFSProverChannel::new(PrngKeccak256::new());
+    let mut prover_channel_1 = generate_prover_channel();
 
     let _ = prover_channel_1.apply_proof_of_work(0);
     let pow_value_1 = prover_channel_1.draw_number(1 << 24);
 
-    let mut prover_channel_2 = TestFSProverChannel::new(PrngKeccak256::new());
+    let mut prover_channel_2 = generate_prover_channel();
     let pow_value_2 = prover_channel_2.draw_number(1 << 24);
 
     assert_eq!(pow_value_1, pow_value_2);
 
     let proof = prover_channel_1.get_proof();
-    let mut verifier_channel = TestFSVerifierChannel::new(PrngKeccak256::new(), proof);
+    let mut verifier_channel = generate_verifier_channel(proof);
 
     let _ = verifier_channel.apply_proof_of_work(0);
     let pow_value_3 = verifier_channel.draw_number(1 << 24);
@@ -169,20 +194,18 @@ fn proof_of_work_zero_bits() {
 
 #[test]
 fn sending_consistent_with_receiving_random_bytes() {
-    let mut prng = PrngKeccak256::new();
-    let mut prover_channel = TestFSProverChannel::new(PrngKeccak256::new());
+    let mut prover_channel = generate_prover_channel();
     let mut bytes_sent = Vec::new();
 
     for _ in 0..100 {
-        let random_num = prng.uniform_int(0..=128) as usize;
-        let mut bytes_to_send = vec![0; random_num];
-        prng.random_bytes(&mut bytes_to_send);
+        let random_num = rand::thread_rng().gen_range(0..=128);
+        let bytes_to_send = generate_random_bytes(random_num);
         let _ = prover_channel.send_bytes(&bytes_to_send);
         bytes_sent.push(bytes_to_send);
     }
 
     let proof = prover_channel.get_proof();
-    let mut verifier_channel = TestFSVerifierChannel::new(PrngKeccak256::new(), proof);
+    let mut verifier_channel = generate_verifier_channel(proof);
     for bytes in bytes_sent {
         assert_eq!(verifier_channel.recv_bytes(bytes.len()).unwrap(), bytes);
     }
@@ -190,10 +213,9 @@ fn sending_consistent_with_receiving_random_bytes() {
 
 #[test]
 fn fri_flow_simulation() {
-    let mut prover_channel = TestFSProverChannel::new(PrngKeccak256::new());
+    let mut prover_channel = generate_prover_channel();
 
-    let mut prng: PrngKeccak256 = PrngKeccak256::new();
-    let pcommitment1 = generate_commitment(&mut prng);
+    let pcommitment1 = generate_commitment();
 
     // First FRI layer
     let _ = prover_channel.send_commit_hash(pcommitment1);
@@ -203,7 +225,7 @@ fn fri_flow_simulation() {
     let ptest_field_element2 = prover_channel.draw_felem();
 
     // expected last layer const
-    let pexpected_last_layer_const = prng.random_felem::<Felt252>();
+    let pexpected_last_layer_const = generate_random_felem();
     let _ = prover_channel.send_felts(&[pexpected_last_layer_const]);
 
     // query index#1 first layer
@@ -213,14 +235,14 @@ fn fri_flow_simulation() {
 
     let mut pdecommitment1 = Vec::new();
     for _ in 0..15 {
-        let node = generate_commitment(&mut prng);
+        let node = generate_commitment();
         // FRI layer
         let _ = prover_channel.send_decommit_node(node);
         pdecommitment1.push(node);
     }
 
     let proof = prover_channel.get_proof();
-    let mut verifier_channel = TestFSVerifierChannel::new(PrngKeccak256::new(), proof);
+    let mut verifier_channel = generate_verifier_channel(proof);
 
     let vcommitment1 = verifier_channel.recv_commit_hash().unwrap();
     assert_eq!(vcommitment1, pcommitment1);

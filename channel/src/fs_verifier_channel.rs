@@ -39,7 +39,7 @@ impl<F: PrimeField, P: Prng, W: Digest> FSVerifierChannel<F, P, W> {
         static MAX_VALUE: OnceLock<BigUint> = OnceLock::new();
         MAX_VALUE.get_or_init(|| {
             let modulus = F::MODULUS.into();
-            let size: usize = ((F::MODULUS_BIT_SIZE + 7) / 8) as usize;
+            let size = F::MODULUS_BIT_SIZE.div_ceil(8) as usize;
             let max = BigUint::from_bytes_be(&vec![0xff; size]);
             let quotient = max.div(&modulus);
             quotient * modulus
@@ -49,7 +49,7 @@ impl<F: PrimeField, P: Prng, W: Digest> FSVerifierChannel<F, P, W> {
 
 impl<F: PrimeField, P: Prng, W: Digest> Channel for FSVerifierChannel<F, P, W> {
     type Field = F;
-    type Commitment = GenericArray<u8, P::CommitmentSize>;
+    type Commitment = GenericArray<u8, P::DigestSize>;
 
     fn draw_number(&mut self, upper_bound: u64) -> u64 {
         assert!(
@@ -98,7 +98,14 @@ impl<F: PrimeField, P: Prng, W: Digest> FSChannel for FSVerifierChannel<F, P, W>
         }
 
         let worker: ProofOfWorkVerifier<Self::PowHash> = Default::default();
-        let witness = self.recv_data(ProofOfWorkVerifier::<Self::PowHash>::NONCE_BYTES)?;
+        let witness = if ProofOfWorkVerifier::<Self::PowHash>::NONCE_BYTES > P::bytes_chunk_size() {
+            self.recv_data(ProofOfWorkVerifier::<Self::PowHash>::NONCE_BYTES)?
+        } else {
+            // recv data with size P::bytes_chunk_size() then trim last bytes
+            let mut witness = self.recv_data(P::bytes_chunk_size())?;
+            witness.truncate(ProofOfWorkVerifier::<Self::PowHash>::NONCE_BYTES);
+            witness
+        };
 
         match worker.verify(self.proof.get_ref(), security_bits, &witness) {
             true => Ok(()),
@@ -110,7 +117,7 @@ impl<F: PrimeField, P: Prng, W: Digest> FSChannel for FSVerifierChannel<F, P, W>
 impl<F: PrimeField, P: Prng, W: Digest> VerifierChannel for FSVerifierChannel<F, P, W> {
     fn recv_felts(&mut self, n: usize) -> Result<Vec<Self::Field>, anyhow::Error> {
         let mut felts = Vec::with_capacity(n);
-        let chunk_bytes_size = ((Self::Field::MODULUS_BIT_SIZE + 7) / 8) as usize;
+        let chunk_bytes_size = Self::Field::MODULUS_BIT_SIZE.div_ceil(8) as usize;
         let raw_bytes: Vec<u8> = self.recv_bytes(n * chunk_bytes_size)?;
 
         for chunk in raw_bytes.chunks_exact(chunk_bytes_size) {

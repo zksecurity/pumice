@@ -5,44 +5,56 @@ use ark_ff::PrimeField;
 use felt::Felt252;
 use generic_array::GenericArray;
 use hex_literal::hex;
-use randomness::{keccak256::PrngKeccak256, poseidon3::PrngPoseidon3, Prng, PrngOnlyForTest};
+use rand::{Rng, RngCore};
+use randomness::{poseidon3::PrngPoseidon3, Prng};
 use sha3::Sha3_256;
 
 type TestFSVerifierChannel = FSVerifierChannel<Felt252, PrngPoseidon3, Sha3_256>;
 type TestFSProverChannel = FSProverChannel<Felt252, PrngPoseidon3, Sha3_256>;
 
-type TestCommitmentSize = <PrngPoseidon3 as Prng>::CommitmentSize;
+type TestCommitmentSize = <PrngPoseidon3 as Prng>::DigestSize;
 
 const DIGEST_NUM_BYTES: usize = Felt252::MODULUS_BIT_SIZE.div_ceil(8) as usize;
 
-fn generate_commitment(prng: &mut PrngPoseidon3) -> GenericArray<u8, TestCommitmentSize> {
+fn generate_random_bytes(n_elements: usize) -> Vec<u8> {
+    let mut bytes = vec![0u8; n_elements];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    bytes
+}
+
+fn generate_initial_state_bytes() -> GenericArray<u8, TestCommitmentSize> {
+    let mut bytes = GenericArray::default();
+    rand::thread_rng().fill_bytes(&mut bytes);
+    bytes
+}
+
+fn generate_prover_channel(initia_state_bytes: &[u8]) -> TestFSProverChannel {
+    let prng = PrngPoseidon3::new_with_seed(initia_state_bytes);
+    TestFSProverChannel::new(prng)
+}
+
+fn generate_verifier_channel(initia_state_bytes: &[u8], proof: Vec<u8>) -> TestFSVerifierChannel {
+    let prng = PrngPoseidon3::new_with_seed(initia_state_bytes);
+    TestFSVerifierChannel::new(prng, proof)
+}
+
+fn generate_commitment() -> GenericArray<u8, TestCommitmentSize> {
     let mut raw_bytes = [0u8; DIGEST_NUM_BYTES];
-    prng.random_bytes(&mut raw_bytes);
+    rand::thread_rng().fill_bytes(&mut raw_bytes);
     GenericArray::try_from_iter(raw_bytes.into_iter()).unwrap()
 }
 
-fn generate_random_felem<P: Prng>(prng: &mut P) -> Felt252 {
+fn generate_random_felem() -> Felt252 {
     let mut raw_bytes = [0u8; DIGEST_NUM_BYTES];
-    prng.random_bytes(&mut raw_bytes);
+    rand::thread_rng().fill_bytes(&mut raw_bytes);
     Felt252::from_be_bytes_mod_order(&raw_bytes)
-}
-
-fn generate_random_felem_as_bytes<P: Prng>(prng: &mut P, n_elements: usize) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    for _ in 0..n_elements {
-        bytes.extend(prng.random_bytes_vec(DIGEST_NUM_BYTES));
-    }
-    bytes
 }
 
 #[test]
 fn constant_poseidon_channel() {
-    let init_state_bytes: <TestFSProverChannel as Channel>::Commitment = GenericArray::default();
-
-    let prng_p = PrngPoseidon3::new_with_seed(&init_state_bytes);
-    let prng_v = PrngPoseidon3::new_with_seed(&init_state_bytes);
-    let prover_channel = TestFSProverChannel::new(prng_p);
-    let mut verifier_channel = TestFSVerifierChannel::new(prng_v, prover_channel.get_proof());
+    let prover_channel = TestFSProverChannel::new(PrngPoseidon3::new());
+    let mut verifier_channel =
+        TestFSVerifierChannel::new(PrngPoseidon3::new(), prover_channel.get_proof());
 
     let random_felem_v1 = verifier_channel.draw_felem();
     let expected_felem_v1 = Felt252::from_be_bytes_mod_order(&hex!(
@@ -69,24 +81,19 @@ fn constant_poseidon_channel() {
 
 #[test]
 fn sending_consistent_with_receiving_bytes() {
-    let mut prng = PrngKeccak256::new();
-    let mut init_state_bytes: <TestFSProverChannel as Channel>::Commitment =
-        GenericArray::default();
-    prng.random_bytes(&mut init_state_bytes);
+    let init_state_bytes = generate_initial_state_bytes();
 
-    let pdata1 = generate_random_felem_as_bytes(&mut prng, 1);
-    let pdata2 = generate_random_felem_as_bytes(&mut prng, 2);
+    let pdata1 = generate_random_bytes(DIGEST_NUM_BYTES);
+    let pdata2 = generate_random_bytes(DIGEST_NUM_BYTES * 2);
 
-    let prng_p = PrngPoseidon3::new_with_seed(&init_state_bytes);
-    let mut prover_channel = TestFSProverChannel::new(prng_p);
+    let mut prover_channel = generate_prover_channel(&init_state_bytes);
 
     let _ = prover_channel.send_bytes(&pdata1);
     let _ = prover_channel.send_bytes(&pdata2);
     let pdata3 = prover_channel.draw_felem();
 
-    let proof = prover_channel.get_proof();
-    let prng_v = PrngPoseidon3::new_with_seed(&init_state_bytes);
-    let mut verifier_channel = TestFSVerifierChannel::new(prng_v, proof);
+    let mut verifier_channel =
+        generate_verifier_channel(&init_state_bytes, prover_channel.get_proof());
 
     let vdata1 = verifier_channel.recv_bytes(DIGEST_NUM_BYTES).unwrap();
     let vdata2 = verifier_channel.recv_bytes(DIGEST_NUM_BYTES * 2).unwrap();
@@ -99,58 +106,49 @@ fn sending_consistent_with_receiving_bytes() {
 
 #[test]
 fn proof_of_work() {
-    let init_state_bytes: <TestFSProverChannel as Channel>::Commitment = GenericArray::default();
-
-    let prng_p = PrngPoseidon3::new_with_seed(&init_state_bytes);
-    let mut prover_channel = TestFSProverChannel::new(prng_p);
+    let init_state_bytes = generate_initial_state_bytes();
+    let mut prover_channel = generate_prover_channel(&init_state_bytes);
 
     let work_bits = 15;
     let _ = prover_channel.apply_proof_of_work(work_bits);
     let pow_value = prover_channel.draw_number(1 << 24);
 
-    let proof = prover_channel.get_proof();
-    let prng_v = PrngPoseidon3::new_with_seed(&init_state_bytes);
-    let mut verifier_channel = TestFSVerifierChannel::new(prng_v, proof.clone());
+    let mut verifier_channel =
+        generate_verifier_channel(&init_state_bytes, prover_channel.get_proof());
 
     let _ = verifier_channel.apply_proof_of_work(work_bits);
     assert_eq!(verifier_channel.draw_number(1 << 24), pow_value);
 
-    let prng_vbad_1 = PrngPoseidon3::new_with_seed(&init_state_bytes);
-    let mut verifier_channel_bad_1 = TestFSVerifierChannel::new(prng_vbad_1, proof.clone());
+    let mut verifier_channel_bad_1 =
+        generate_verifier_channel(&init_state_bytes, prover_channel.get_proof());
     assert!(verifier_channel_bad_1
         .apply_proof_of_work(work_bits + 1)
         .is_err());
 
-    let prng_vbad_2 = PrngPoseidon3::new_with_seed(&init_state_bytes);
-    let mut verifier_channel_bad2 = TestFSVerifierChannel::new(prng_vbad_2, proof.clone());
+    let mut verifier_channel_bad2 =
+        generate_verifier_channel(&init_state_bytes, prover_channel.get_proof());
     assert!(verifier_channel_bad2
         .apply_proof_of_work(work_bits - 1)
         .is_err());
 
-    let prng_p2 = PrngPoseidon3::new_with_seed(&init_state_bytes);
-    let mut nonpow_prover_channel = TestFSProverChannel::new(prng_p2);
+    let mut nonpow_prover_channel = generate_prover_channel(&init_state_bytes);
     assert_ne!(nonpow_prover_channel.draw_number(1 << 24), pow_value);
 }
 
 #[test]
 fn proof_of_work_depends_on_state() {
-    let mut prng = PrngKeccak256::new();
-    let init_state_bytes: <TestFSProverChannel as Channel>::Commitment = GenericArray::default();
+    let init_state_bytes = generate_initial_state_bytes();
+    let pdata1 = generate_random_bytes(32);
+    let pdata2 = generate_random_bytes(32);
 
-    let prng_p1 = PrngPoseidon3::new_with_seed(&init_state_bytes);
-    let mut prover_channel_1 = TestFSProverChannel::new(prng_p1);
-    let mut pdata1 = vec![0; 8];
-    prng.random_bytes(&mut pdata1);
+    let mut prover_channel_1 = generate_prover_channel(&init_state_bytes);
     let _ = prover_channel_1.send_bytes(&pdata1);
 
     let work_bits = 15;
     let _ = prover_channel_1.apply_proof_of_work(work_bits);
     let pow_value_1 = prover_channel_1.draw_number(1 << 24);
 
-    let prng_p2 = PrngPoseidon3::new_with_seed(&init_state_bytes);
-    let mut prover_channel_2 = TestFSProverChannel::new(prng_p2);
-    let mut pdata2 = vec![0; 8];
-    prng.random_bytes(&mut pdata2);
+    let mut prover_channel_2 = generate_prover_channel(&init_state_bytes);
     let _ = prover_channel_2.send_bytes(&pdata2);
 
     let _ = prover_channel_2.apply_proof_of_work(work_bits);
@@ -161,22 +159,19 @@ fn proof_of_work_depends_on_state() {
 
 #[test]
 fn proof_of_work_zero_bits() {
-    let init_state_bytes: <TestFSProverChannel as Channel>::Commitment = GenericArray::default();
-    let prng_p1 = PrngPoseidon3::new_with_seed(&init_state_bytes);
-    let mut prover_channel_1 = TestFSProverChannel::new(prng_p1);
+    let init_state_bytes = generate_initial_state_bytes();
+    let mut prover_channel_1 = generate_prover_channel(&init_state_bytes);
 
     let _ = prover_channel_1.apply_proof_of_work(0);
     let pow_value_1 = prover_channel_1.draw_number(1 << 24);
 
-    let prng_p2 = PrngPoseidon3::new_with_seed(&init_state_bytes);
-    let mut prover_channel_2 = TestFSProverChannel::new(prng_p2);
+    let mut prover_channel_2 = generate_prover_channel(&init_state_bytes);
     let pow_value_2 = prover_channel_2.draw_number(1 << 24);
 
     assert_eq!(pow_value_1, pow_value_2);
 
-    let proof = prover_channel_1.get_proof();
-    let prng_v = PrngPoseidon3::new_with_seed(&init_state_bytes);
-    let mut verifier_channel = TestFSVerifierChannel::new(prng_v, proof);
+    let mut verifier_channel =
+        generate_verifier_channel(&init_state_bytes, prover_channel_1.get_proof());
 
     let _ = verifier_channel.apply_proof_of_work(0);
     let pow_value_3 = verifier_channel.draw_number(1 << 24);
@@ -185,23 +180,19 @@ fn proof_of_work_zero_bits() {
 
 #[test]
 fn sending_consistent_with_receiving_random_bytes() {
-    let mut prng = PrngKeccak256::new();
-    let init_state_bytes: <TestFSProverChannel as Channel>::Commitment = GenericArray::default();
-    let prng_p = PrngPoseidon3::new_with_seed(&init_state_bytes);
-    let mut prover_channel = TestFSProverChannel::new(prng_p);
+    let init_state_bytes = generate_initial_state_bytes();
+    let mut prover_channel = generate_prover_channel(&init_state_bytes);
     let mut bytes_sent = Vec::new();
 
     for _ in 0..100 {
-        let random_num = prng.uniform_int(0..=128) as usize;
-        let mut bytes_to_send = vec![0; random_num];
-        prng.random_bytes(&mut bytes_to_send);
+        let random_num = rand::thread_rng().gen_range(0..=20);
+        let bytes_to_send = generate_random_bytes(random_num * PrngPoseidon3::bytes_chunk_size());
         let _ = prover_channel.send_bytes(&bytes_to_send);
         bytes_sent.push(bytes_to_send);
     }
 
     let proof = prover_channel.get_proof();
-    let prng_v = PrngPoseidon3::new_with_seed(&init_state_bytes);
-    let mut verifier_channel = TestFSVerifierChannel::new(prng_v, proof);
+    let mut verifier_channel = generate_verifier_channel(&init_state_bytes, proof);
     for bytes in bytes_sent {
         assert_eq!(verifier_channel.recv_bytes(bytes.len()).unwrap(), bytes);
     }
@@ -209,13 +200,10 @@ fn sending_consistent_with_receiving_random_bytes() {
 
 #[test]
 fn fri_flow_simulation() {
-    let init_state_bytes: <TestFSProverChannel as Channel>::Commitment = GenericArray::default();
+    let init_state_bytes = generate_initial_state_bytes();
+    let mut prover_channel = generate_prover_channel(&init_state_bytes);
 
-    let prng_p = PrngPoseidon3::new_with_seed(&init_state_bytes);
-    let mut prover_channel = TestFSProverChannel::new(prng_p);
-
-    let mut prng = PrngPoseidon3::new_with_seed(&init_state_bytes);
-    let pcommitment1 = generate_commitment(&mut prng);
+    let pcommitment1 = generate_commitment();
 
     // First FRI layer
     let _ = prover_channel.send_commit_hash(pcommitment1);
@@ -225,7 +213,7 @@ fn fri_flow_simulation() {
     let ptest_field_element2 = prover_channel.draw_felem();
 
     // expected last layer const
-    let pexpected_last_layer_const = generate_random_felem(&mut prng);
+    let pexpected_last_layer_const = generate_random_felem();
     let _ = prover_channel.send_felts(&[pexpected_last_layer_const]);
 
     // query index#1 first layer
@@ -235,15 +223,14 @@ fn fri_flow_simulation() {
 
     let mut pdecommitment1 = Vec::new();
     for _ in 0..15 {
-        let node = generate_commitment(&mut prng);
+        let node = generate_commitment();
         // FRI layer
         let _ = prover_channel.send_decommit_node(node);
         pdecommitment1.push(node);
     }
 
     let proof = prover_channel.get_proof();
-    let prng_v = PrngPoseidon3::new_with_seed(&init_state_bytes);
-    let mut verifier_channel = TestFSVerifierChannel::new(prng_v, proof);
+    let mut verifier_channel = generate_verifier_channel(&init_state_bytes, proof);
 
     let vcommitment1 = verifier_channel.recv_commit_hash().unwrap();
     assert_eq!(vcommitment1, pcommitment1);
