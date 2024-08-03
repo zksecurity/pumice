@@ -16,3 +16,4 @@ generic-array.workspace = true
 [dev-dependencies]
 hex-literal.workspace = true
 rand = "0.8.5"
+paste.workspace = true

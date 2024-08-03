@@ -4,12 +4,8 @@ pub mod fs_prover_channel;
 pub mod fs_verifier_channel;
 pub mod pow;
 
-// #[cfg(test)]
-// mod test;
 #[cfg(test)]
-mod test_keccak_channel;
-#[cfg(test)]
-mod test_poseidon3_channel;
+mod test;
 
 use ark_ff::PrimeField;
 
