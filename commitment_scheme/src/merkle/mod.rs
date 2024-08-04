@@ -1,5 +1,5 @@
 pub mod hash;
-use crate::hash::Hasher;
+use crate::merkle::hash::Hasher;
 use thiserror::Error;
 
 use std::{collections::VecDeque, marker::PhantomData};
@@ -229,8 +229,8 @@ mod tests {
     use poseidon::Poseidon3;
 
     use crate::{
-        hash::{Blake2s256Hasher, Hasher, Keccak256Hasher},
-        MerkleTree,
+        merkle::hash::{Blake2s256Hasher, Hasher, Keccak256Hasher},
+        merkle::MerkleTree,
     };
 
     use felt::Felt252;
