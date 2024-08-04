@@ -226,6 +226,7 @@ pub enum MerkleError {
 mod tests {
     use ark_ff::PrimeField;
     use hex_literal::hex;
+    use poseidon::Poseidon3;
 
     use crate::{
         hash::{Blake2s256Hasher, Hasher, Keccak256Hasher},
@@ -547,6 +548,102 @@ mod tests {
             ),
         ];
         test_verify_true::<Felt252, Keccak256Hasher<Felt252>>(&input, root_exp, &to_verify);
+
+        // tests using Poseidon3
+        let input = [felt::hex(
+            "0x75667f6fe5693fbad372d22f98a6327fde210e05c38cb60a0b18680dbcb36a8",
+        )];
+        let root_exp =
+            felt::hex("0x75667f6fe5693fbad372d22f98a6327fde210e05c38cb60a0b18680dbcb36a8");
+        let to_verify = [(
+            0,
+            felt::hex("0x75667f6fe5693fbad372d22f98a6327fde210e05c38cb60a0b18680dbcb36a8"),
+        )];
+        test_verify_true::<Felt252, Poseidon3<Felt252>>(&input, root_exp, &to_verify);
+
+        let input = [
+            felt::hex("0x26a7232a361ae171948e7fb8e00f012ed8071ba0b8d34afc3108d821d3943a3"),
+            felt::hex("0x169512152548024fded52fd02253b9ee2be4a4fdaab4d8495d22be9e113884c"),
+        ];
+        let root_exp =
+            felt::hex("0x3ea667f15f07b1127afe2473679069e19861bacc05df9ac42635e91bf887fa3");
+        let to_verify = [(
+            1,
+            felt::hex("0x169512152548024fded52fd02253b9ee2be4a4fdaab4d8495d22be9e113884c"),
+        )];
+        test_verify_true::<Felt252, Poseidon3<Felt252>>(&input, root_exp, &to_verify);
+
+        let input = [
+            felt::hex("0x5d5e6513cb2c66f61bfa1d6a6eb8215c0637ed6cb8be3310a991a271bba195d"),
+            felt::hex("0x71b3e69ba1d55ce0d64b87ae1a76f498bc3c444bbcdd02a81893a5b71020a8"),
+            felt::hex("0x75857673562a5611b0005047728fa1e050dcbf19d3a2d08c45909b142903309"),
+            felt::hex("0xdcb000821d941b4aee583805390296f859fa4b3f1d5acfa9bf7de8a561c19"),
+        ];
+        let root_exp =
+            felt::hex("0x8eacf88fcb82bed025b069d23d41a3b3d7902e6e8279b3e1de42ce43061008");
+        let to_verify = [
+            (
+                0,
+                felt::hex("0x5d5e6513cb2c66f61bfa1d6a6eb8215c0637ed6cb8be3310a991a271bba195d"),
+            ),
+            (
+                2,
+                felt::hex("0x75857673562a5611b0005047728fa1e050dcbf19d3a2d08c45909b142903309"),
+            ),
+            (
+                3,
+                felt::hex("0xdcb000821d941b4aee583805390296f859fa4b3f1d5acfa9bf7de8a561c19"),
+            ),
+        ];
+        test_verify_true::<Felt252, Poseidon3<Felt252>>(&input, root_exp, &to_verify);
+
+        let input = [
+            felt::hex("0x36313083bda3d5d1f1ade3dfb59311bd38f583c92f570719cb41be7e46e6ee5"),
+            felt::hex("0x353699d84e4b67ce55874046b58e501a73582c2b16ceed4ff651e6439089483"),
+            felt::hex("0x452135053077d0c52f8057d5a418a67bdecec4afb240d59613e885e0e71a0bf"),
+            felt::hex("0x4705a84ca4ee4bc971f9bdf51fd2f74e1273ca72261c0a5845e89dc5c3a1a00"),
+            felt::hex("0x27c1e003f81b13f5282b863dceddb162dd6180150eabc16d2267b5aa25c1786"),
+            felt::hex("0x27b3118926ffe13b70a3a3ed551869cc31d344551e5a7013a9146d0fa84f06a"),
+            felt::hex("0x5f7701e493613cfb4e3b0600eccf74d4916cc66aa2631ab374e73d3a43bcee4"),
+            felt::hex("0x5e598f5a773a9ab554121b8d4937bf1b383393f10ae49f98532a2beea1f7852"),
+        ];
+        let root_exp =
+            felt::hex("0x3a80041b3647dd472cb7979dc422e9b7d86d4bcd08b957a6ae05caf6c6e189b");
+        let to_verify = [
+            (
+                0,
+                felt::hex("0x36313083bda3d5d1f1ade3dfb59311bd38f583c92f570719cb41be7e46e6ee5"),
+            ),
+            (
+                1,
+                felt::hex("0x353699d84e4b67ce55874046b58e501a73582c2b16ceed4ff651e6439089483"),
+            ),
+            (
+                2,
+                felt::hex("0x452135053077d0c52f8057d5a418a67bdecec4afb240d59613e885e0e71a0bf"),
+            ),
+            (
+                3,
+                felt::hex("0x4705a84ca4ee4bc971f9bdf51fd2f74e1273ca72261c0a5845e89dc5c3a1a00"),
+            ),
+            (
+                4,
+                felt::hex("0x27c1e003f81b13f5282b863dceddb162dd6180150eabc16d2267b5aa25c1786"),
+            ),
+            (
+                5,
+                felt::hex("0x27b3118926ffe13b70a3a3ed551869cc31d344551e5a7013a9146d0fa84f06a"),
+            ),
+            (
+                6,
+                felt::hex("0x5f7701e493613cfb4e3b0600eccf74d4916cc66aa2631ab374e73d3a43bcee4"),
+            ),
+            (
+                7,
+                felt::hex("0x5e598f5a773a9ab554121b8d4937bf1b383393f10ae49f98532a2beea1f7852"),
+            ),
+        ];
+        test_verify_true::<Felt252, Poseidon3<Felt252>>(&input, root_exp, &to_verify);
     }
 
     fn test_verify_false<F, H>(
@@ -860,5 +957,87 @@ mod tests {
             ),
         ];
         test_verify_false::<Felt252, Keccak256Hasher<Felt252>>(&input, root_exp, &to_verify);
+
+        // tests using Poseidon3
+        let input = [felt::hex(
+            "0xc89ae25f3fa9f809dc7e255509bbe13d8ee41e7050a1757d10b14380479762",
+        )];
+        let root_exp =
+            felt::hex("0xc89ae25f3fa9f809dc7e255509bbe13d8ee41e7050a1757d10b14380479762");
+        let to_verify = [(
+            0,
+            felt::hex("0x61e4f02a5fb16a37cef579d5a3bc31ab6bc3dfb112d0bbe440afcf4ef6b2dbd"),
+        )];
+        test_verify_false::<Felt252, Poseidon3<Felt252>>(&input, root_exp, &to_verify);
+
+        let input = [
+            felt::hex("0x2f926674daed935c5ec20daf9e116f45e74ebad57909889e6c4e60ac9a7239a"),
+            felt::hex("0x59089a262fd310d47e824b3add73c7bbedd67b2f111b3d67a48177765891a1f"),
+        ];
+        let root_exp =
+            felt::hex("0x7572153d1bc66733cf79b40c1427cdf8c5754e71254491da93c3a789c5f1af3");
+        let to_verify = [(
+            1,
+            felt::hex("0x70336f8988bd453e936b157afcfcf07fa2924e5d670f36fcc9cf01ff09fc6f"),
+        )];
+        test_verify_false::<Felt252, Poseidon3<Felt252>>(&input, root_exp, &to_verify);
+
+        let input = [
+            felt::hex("0x167c6d08b3aec83b4b27bce5df9c9ba4dce709ea7d40497f7bf2cc2b787cc41"),
+            felt::hex("0x5934aa1631d1759018513505f5407abb4e232bdab2aa74e48cbbe1cec301387"),
+            felt::hex("0x56daeb7ceeeda161e5ee669bf88202e034216fa8424c89e1408ad77ea6b8829"),
+            felt::hex("0x1808bca5f11183aaf603971b0ac93f5b4558c47f0777e5db2cc14e3b512c66"),
+        ];
+        let root_exp =
+            felt::hex("0x32cbc8162b4c5f91efd2a5f2c2701fbabafdd08ea8ce7f06d6f0ee2a28cdef5");
+        let to_verify = [(
+            2,
+            felt::hex("0x1f8c6141be9707ec0a767257d522ef2bf321a2e9efc6b93136e3dc9d9665d26"),
+        )];
+        test_verify_false::<Felt252, Poseidon3<Felt252>>(&input, root_exp, &to_verify);
+
+        let input = [
+            felt::hex("0x726cb96d8303497a472d118b54046e2966076ad68b3c39a24cd96a8c5ae466b"),
+            felt::hex("0x6380a19495b51c52bd73a7111d5a4b0c022efedfb90d46660301ce365b0069c"),
+            felt::hex("0x4c3abd3626c95cd55e330856ebc8cc85c8871349c28079149e1ee19f4ba7809"),
+            felt::hex("0x438059b58dd33650037db7274014d00ce07a1a62ddbf68b43b10a91de504606"),
+            felt::hex("0x573f3d932cbfc0070b76aa652a82bd93bc0e92517068092b252788bd54bbe84"),
+            felt::hex("0x26a109ece8e786838ad839a0513db66ff403cb97e6c35396b8e82ef014729ff"),
+            felt::hex("0x355834fe0fb7afcbd719967841a691822148ff959c16e5ba67114a9774c57e5"),
+            felt::hex("0x203b523ca101a81bbb94013b9408968c324e35340081375f77f628114441622"),
+        ];
+        let root_exp =
+            felt::hex("0x577c0d4d52b1b4b583e4f6be73ed16b33067318b0d9eda930c47f60679fe5c0");
+        let to_verify = [
+            (
+                0,
+                felt::hex("0x726cb96d8303497a472d118b54046e2966076ad68b3c39a24cd96a8c5ae466b"),
+            ),
+            (
+                1,
+                felt::hex("0x6380a19495b51c52bd73a7111d5a4b0c022efedfb90d46660301ce365b0069c"),
+            ),
+            (
+                2,
+                felt::hex("0x4c3abd3626c95cd55e330856ebc8cc85c8871349c28079149e1ee19f4ba7809"),
+            ),
+            (
+                3,
+                felt::hex("0x28dc328d44f2a150c15de51b322b020adbf685b520cac210a314fa98efedab3"),
+            ),
+            (
+                4,
+                felt::hex("0x573f3d932cbfc0070b76aa652a82bd93bc0e92517068092b252788bd54bbe84"),
+            ),
+            (
+                5,
+                felt::hex("0x26a109ece8e786838ad839a0513db66ff403cb97e6c35396b8e82ef014729ff"),
+            ),
+            (
+                6,
+                felt::hex("0x355834fe0fb7afcbd719967841a691822148ff959c16e5ba67114a9774c57e5"),
+            ),
+        ];
+        test_verify_false::<Felt252, Poseidon3<Felt252>>(&input, root_exp, &to_verify);
     }
 }
