@@ -1,21 +1,22 @@
 use crate::pow::{ProofOfWorkProver, POW_DEFAULT_CHUNK_SIZE};
 use crate::{channel_states::ChannelStates, Channel, FSChannel, ProverChannel};
 use ark_ff::{BigInteger, PrimeField};
+use generic_array::GenericArray;
 use num_bigint::BigUint;
 use randomness::Prng;
-use sha3::digest::{Digest, Output};
+use sha3::Digest;
 use std::marker::PhantomData;
 use std::ops::Div;
 use std::sync::OnceLock;
 
-pub struct FSProverChannel<F: PrimeField, D: Digest, P: Prng> {
-    pub _ph: PhantomData<(F, D)>,
+pub struct FSProverChannel<F: PrimeField, P: Prng, W: Digest> {
+    pub _ph: PhantomData<(F, W)>,
     pub prng: P,
     pub proof: Vec<u8>,
     pub states: ChannelStates,
 }
 
-impl<F: PrimeField, D: Digest, P: Prng> FSProverChannel<F, D, P> {
+impl<F: PrimeField, P: Prng, W: Digest> FSProverChannel<F, P, W> {
     pub fn new(prng: P) -> Self {
         Self {
             _ph: PhantomData,
@@ -27,7 +28,7 @@ impl<F: PrimeField, D: Digest, P: Prng> FSProverChannel<F, D, P> {
 }
 
 #[allow(dead_code)]
-impl<F: PrimeField, D: Digest, P: Prng> FSProverChannel<F, D, P> {
+impl<F: PrimeField, P: Prng, W: Digest> FSProverChannel<F, P, W> {
     fn modulus() -> &'static BigUint {
         static MODULUS: OnceLock<BigUint> = OnceLock::new();
         MODULUS.get_or_init(|| F::MODULUS.into())
@@ -45,9 +46,9 @@ impl<F: PrimeField, D: Digest, P: Prng> FSProverChannel<F, D, P> {
     }
 }
 
-impl<F: PrimeField, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
+impl<F: PrimeField, P: Prng, W: Digest> Channel for FSProverChannel<F, P, W> {
     type Field = F;
-    type FieldHash = D;
+    type Commitment = GenericArray<u8, P::DigestSize>;
 
     fn draw_number(&mut self, upper_bound: u64) -> u64 {
         assert!(
@@ -55,15 +56,7 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
             "Prover can't receive randomness after query phase has begun."
         );
 
-        let raw_bytes = self.draw_bytes(std::mem::size_of::<u64>());
-        let number = u64::from_be_bytes(raw_bytes.try_into().unwrap());
-
-        assert!(
-            upper_bound < 0x0001_0000_0000_0000,
-            "Random number with too high an upper bound"
-        );
-
-        number % upper_bound
+        self.prng.random_number(upper_bound)
     }
 
     fn draw_felem(&mut self) -> Self::Field {
@@ -75,7 +68,9 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
         let mut raw_bytes: Vec<u8>;
         let mut random_biguint: BigUint;
         loop {
-            raw_bytes = self.draw_bytes(Self::Field::MODULUS_BIT_SIZE.div_ceil(8) as usize);
+            raw_bytes = self
+                .prng
+                .random_bytes_vec(Self::Field::MODULUS_BIT_SIZE.div_ceil(8) as usize);
             random_biguint = BigUint::from_bytes_be(&raw_bytes);
             if random_biguint < *Self::max_divislble() {
                 random_biguint %= Self::modulus();
@@ -90,35 +85,34 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSProverChannel<F, D, P> {
 
         field_element
     }
-
-    #[inline]
-    fn draw_bytes(&mut self, n: usize) -> Vec<u8> {
-        let mut raw_bytes = vec![0u8; n];
-        self.prng.random_bytes(&mut raw_bytes);
-        raw_bytes
-    }
 }
 
-impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSProverChannel<F, D, P> {
-    type PowHash = P;
+impl<F: PrimeField, P: Prng, W: Digest> FSChannel for FSProverChannel<F, P, W> {
+    type PowHash = W;
 
     fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
         if security_bits == 0 {
             return Ok(());
         }
 
-        let worker = ProofOfWorkProver::<D>::default();
-        let pow = worker.prove(
+        let worker = ProofOfWorkProver::<Self::PowHash>::default();
+        let mut pow = worker.prove(
             &self.prng.prng_state(),
             security_bits,
             POW_DEFAULT_CHUNK_SIZE,
         );
+
+        // Expand the nonce to be compatible with the size of felt
+        if pow.len() < P::bytes_chunk_size() {
+            pow.resize(P::bytes_chunk_size(), 0u8);
+        }
+
         self.send_data(&pow)?;
         Ok(())
     }
 }
 
-impl<F: PrimeField, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, P> {
+impl<F: PrimeField, P: Prng, W: Digest> ProverChannel for FSProverChannel<F, P, W> {
     fn send_felts(&mut self, felts: &[Self::Field]) -> Result<(), anyhow::Error> {
         let mut raw_bytes = vec![0u8; 0];
         for &felem in felts {
@@ -132,6 +126,13 @@ impl<F: PrimeField, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, 
     }
 
     fn send_bytes(&mut self, bytes: &[u8]) -> Result<(), anyhow::Error> {
+        // XXX : should assert ?
+        if bytes.len() % P::bytes_chunk_size() != 0 {
+            return Err(anyhow::anyhow!(
+                "Number of bytes must be a multiple of the bytes chunk size."
+            ));
+        }
+
         self.proof.extend_from_slice(bytes);
 
         if !self.states.is_query_phase() {
@@ -147,21 +148,15 @@ impl<F: PrimeField, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, 
         Ok(())
     }
 
-    fn send_commit_hash(
-        &mut self,
-        commitment: Output<Self::FieldHash>,
-    ) -> Result<(), anyhow::Error> {
-        self.send_bytes(commitment.as_slice())?;
+    fn send_commit_hash(&mut self, commitment: Self::Commitment) -> Result<(), anyhow::Error> {
+        self.send_bytes(commitment.as_ref())?;
         self.states.increment_commitment_count();
         self.states.increment_hash_count();
         Ok(())
     }
 
-    fn send_decommit_node(
-        &mut self,
-        decommitment: Output<Self::FieldHash>,
-    ) -> Result<(), anyhow::Error> {
-        self.send_bytes(decommitment.as_slice())?;
+    fn send_decommit_node(&mut self, decommitment: Self::Commitment) -> Result<(), anyhow::Error> {
+        self.send_bytes(decommitment.as_ref())?;
         self.states.increment_hash_count();
         Ok(())
     }
@@ -175,10 +170,10 @@ impl<F: PrimeField, D: Digest, P: Prng> ProverChannel for FSProverChannel<F, D, 
 mod tests {
     use crate::fs_prover_channel::{Channel, FSProverChannel, ProverChannel};
     use felt::Felt252;
-    use randomness::{Prng, PrngKeccak256};
+    use randomness::{keccak256::PrngKeccak256, Prng};
     use sha3::Sha3_256;
 
-    type MyFSProverChannel = FSProverChannel<Felt252, Sha3_256, PrngKeccak256>;
+    type MyFSProverChannel = FSProverChannel<Felt252, PrngKeccak256, Sha3_256>;
 
     #[test]
     fn test_draw_number() {
@@ -188,17 +183,6 @@ mod tests {
         let upper_bound = 100;
         let number = channel.draw_number(upper_bound);
         assert!(number < upper_bound);
-    }
-
-    #[test]
-    fn test_receiving_bytes() {
-        let prng = PrngKeccak256::new();
-        let mut channel = MyFSProverChannel::new(prng);
-
-        for &size in [4, 8, 16, 18, 32, 33, 63, 64, 65].iter() {
-            let bytes = channel.draw_bytes(size);
-            assert_eq!(bytes.len(), size);
-        }
     }
 
     #[test]
