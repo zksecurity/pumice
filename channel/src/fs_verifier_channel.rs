@@ -1,23 +1,23 @@
 use crate::pow::ProofOfWorkVerifier;
 use crate::{channel_states::ChannelStates, Channel, FSChannel, VerifierChannel};
 use ark_ff::PrimeField;
+use generic_array::GenericArray;
 use num_bigint::BigUint;
 use randomness::Prng;
-use sha3::digest::generic_array::GenericArray;
-use sha3::digest::{Digest, Output, OutputSizeUser};
+use sha3::Digest;
 use std::io::{Cursor, Read};
 use std::marker::PhantomData;
 use std::ops::Div;
 use std::sync::OnceLock;
 
-pub struct FSVerifierChannel<F: PrimeField, D: Digest, P: Prng> {
-    pub _ph: PhantomData<(F, D)>,
+pub struct FSVerifierChannel<F: PrimeField, P: Prng, W: Digest> {
+    pub _ph: PhantomData<(F, W)>,
     pub prng: P,
     pub proof: Cursor<Vec<u8>>,
     pub states: ChannelStates,
 }
 
-impl<F: PrimeField, D: Digest, P: Prng> FSVerifierChannel<F, D, P> {
+impl<F: PrimeField, P: Prng, W: Digest> FSVerifierChannel<F, P, W> {
     pub fn new(prng: P, proof: Vec<u8>) -> Self {
         Self {
             _ph: PhantomData,
@@ -29,7 +29,7 @@ impl<F: PrimeField, D: Digest, P: Prng> FSVerifierChannel<F, D, P> {
 }
 
 #[allow(dead_code)]
-impl<F: PrimeField, D: Digest, P: Prng> FSVerifierChannel<F, D, P> {
+impl<F: PrimeField, P: Prng, W: Digest> FSVerifierChannel<F, P, W> {
     fn modulus() -> &'static BigUint {
         static MODULUS: OnceLock<BigUint> = OnceLock::new();
         MODULUS.get_or_init(|| F::MODULUS.into())
@@ -39,7 +39,7 @@ impl<F: PrimeField, D: Digest, P: Prng> FSVerifierChannel<F, D, P> {
         static MAX_VALUE: OnceLock<BigUint> = OnceLock::new();
         MAX_VALUE.get_or_init(|| {
             let modulus = F::MODULUS.into();
-            let size: usize = ((F::MODULUS_BIT_SIZE + 7) / 8) as usize;
+            let size = F::MODULUS_BIT_SIZE.div_ceil(8) as usize;
             let max = BigUint::from_bytes_be(&vec![0xff; size]);
             let quotient = max.div(&modulus);
             quotient * modulus
@@ -47,9 +47,9 @@ impl<F: PrimeField, D: Digest, P: Prng> FSVerifierChannel<F, D, P> {
     }
 }
 
-impl<F: PrimeField, D: Digest, P: Prng> Channel for FSVerifierChannel<F, D, P> {
+impl<F: PrimeField, P: Prng, W: Digest> Channel for FSVerifierChannel<F, P, W> {
     type Field = F;
-    type FieldHash = D;
+    type Commitment = GenericArray<u8, P::DigestSize>;
 
     fn draw_number(&mut self, upper_bound: u64) -> u64 {
         assert!(
@@ -57,15 +57,7 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSVerifierChannel<F, D, P> {
             "Verifier can't send randomness after query phase has begun."
         );
 
-        let raw_bytes = self.draw_bytes(std::mem::size_of::<u64>());
-        let number = u64::from_be_bytes(raw_bytes.try_into().unwrap());
-
-        assert!(
-            upper_bound < 0x0001_0000_0000_0000,
-            "Random number with too high an upper bound"
-        );
-
-        number % upper_bound
+        self.prng.random_number(upper_bound)
     }
 
     fn draw_felem(&mut self) -> Self::Field {
@@ -77,7 +69,9 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSVerifierChannel<F, D, P> {
         let mut raw_bytes: Vec<u8>;
         let mut random_biguint: BigUint;
         loop {
-            raw_bytes = self.draw_bytes(Self::Field::MODULUS_BIT_SIZE.div_ceil(8) as usize);
+            raw_bytes = self
+                .prng
+                .random_bytes_vec(Self::Field::MODULUS_BIT_SIZE.div_ceil(8) as usize);
             random_biguint = BigUint::from_bytes_be(&raw_bytes);
             if random_biguint < *Self::max_divislble() {
                 random_biguint %= Self::modulus();
@@ -93,26 +87,25 @@ impl<F: PrimeField, D: Digest, P: Prng> Channel for FSVerifierChannel<F, D, P> {
 
         field_element
     }
-
-    #[inline]
-    fn draw_bytes(&mut self, n: usize) -> Vec<u8> {
-        let mut raw_bytes = vec![0u8; n];
-        self.prng.random_bytes(&mut raw_bytes);
-        raw_bytes
-    }
 }
 
-impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSVerifierChannel<F, D, P> {
-    type PowHash = P;
+impl<F: PrimeField, P: Prng, W: Digest> FSChannel for FSVerifierChannel<F, P, W> {
+    type PowHash = W;
 
     fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error> {
         if security_bits == 0 {
             return Ok(());
         }
 
-        let worker: ProofOfWorkVerifier<D> = Default::default();
-        let witness = self.recv_data(ProofOfWorkVerifier::<D>::NONCE_BYTES)?;
-        // TODO : remove magic number ( thread count , log_chunk_size )
+        let worker: ProofOfWorkVerifier<Self::PowHash> = Default::default();
+        let witness = if ProofOfWorkVerifier::<Self::PowHash>::NONCE_BYTES > P::bytes_chunk_size() {
+            self.recv_data(ProofOfWorkVerifier::<Self::PowHash>::NONCE_BYTES)?
+        } else {
+            // recv data with size P::bytes_chunk_size() then trim last bytes
+            let mut witness = self.recv_data(P::bytes_chunk_size())?;
+            witness.truncate(ProofOfWorkVerifier::<Self::PowHash>::NONCE_BYTES);
+            witness
+        };
 
         match worker.verify(self.proof.get_ref(), security_bits, &witness) {
             true => Ok(()),
@@ -121,10 +114,10 @@ impl<F: PrimeField, D: Digest, P: Prng> FSChannel for FSVerifierChannel<F, D, P>
     }
 }
 
-impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F, D, P> {
+impl<F: PrimeField, P: Prng, W: Digest> VerifierChannel for FSVerifierChannel<F, P, W> {
     fn recv_felts(&mut self, n: usize) -> Result<Vec<Self::Field>, anyhow::Error> {
         let mut felts = Vec::with_capacity(n);
-        let chunk_bytes_size = ((Self::Field::MODULUS_BIT_SIZE + 7) / 8) as usize;
+        let chunk_bytes_size = Self::Field::MODULUS_BIT_SIZE.div_ceil(8) as usize;
         let raw_bytes: Vec<u8> = self.recv_bytes(n * chunk_bytes_size)?;
 
         for chunk in raw_bytes.chunks_exact(chunk_bytes_size) {
@@ -155,22 +148,22 @@ impl<F: PrimeField, D: Digest, P: Prng> VerifierChannel for FSVerifierChannel<F,
         Ok(bytes)
     }
 
-    fn recv_commit_hash(&mut self) -> Result<Output<Self::FieldHash>, anyhow::Error> {
-        let size = <Self::FieldHash as OutputSizeUser>::output_size();
+    fn recv_commit_hash(&mut self) -> Result<Self::Commitment, anyhow::Error> {
+        let size = std::mem::size_of::<Self::Commitment>();
         let bytes = self.recv_bytes(size)?;
 
-        let commitment = GenericArray::clone_from_slice(bytes.as_slice());
+        let commitment = GenericArray::try_from_iter(bytes).unwrap();
 
         self.states.increment_commitment_count();
         self.states.increment_hash_count();
         Ok(commitment)
     }
 
-    fn recv_decommit_node(&mut self) -> Result<Output<Self::FieldHash>, anyhow::Error> {
-        let size = <Self::FieldHash as OutputSizeUser>::output_size();
+    fn recv_decommit_node(&mut self) -> Result<Self::Commitment, anyhow::Error> {
+        let size = std::mem::size_of::<Self::Commitment>();
         let bytes = self.recv_bytes(size)?;
 
-        let decommitment = GenericArray::clone_from_slice(bytes.as_slice());
+        let decommitment = GenericArray::try_from_iter(bytes).unwrap();
 
         self.states.increment_hash_count();
         Ok(decommitment)
