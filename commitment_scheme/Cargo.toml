@@ -10,6 +10,7 @@ thiserror.workspace = true
 sha3.workspace = true
 poseidon = { path = "../poseidon" }
 felt = { path = "../felt" }
+generic-array = "0.14.7"
 
 [dev-dependencies]
-hex-literal.workspace = true
+hex.workspace = true 
