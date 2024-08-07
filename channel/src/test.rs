@@ -23,7 +23,7 @@ trait TestFixtures {
         + FSChannel;
     type ProverChannel: ProverChannel<Field = Self::TestField, Commitment = GenericArray<u8, Self::DigestSize>>
         + FSChannel;
-    type DigestSize: ArrayLength;
+    type DigestSize: ArrayLength<u8>;
     type TestField: PrimeField;
 
     const TEST_DIGEST_NUM_BYTES: usize;
