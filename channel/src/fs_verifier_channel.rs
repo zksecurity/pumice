@@ -152,7 +152,7 @@ impl<F: PrimeField, P: Prng, W: Digest> VerifierChannel for FSVerifierChannel<F,
         let size = std::mem::size_of::<Self::Commitment>();
         let bytes = self.recv_bytes(size)?;
 
-        let commitment = GenericArray::try_from_iter(bytes).unwrap();
+        let commitment = GenericArray::from_exact_iter(bytes).unwrap();
 
         self.states.increment_commitment_count();
         self.states.increment_hash_count();
@@ -163,7 +163,7 @@ impl<F: PrimeField, P: Prng, W: Digest> VerifierChannel for FSVerifierChannel<F,
         let size = std::mem::size_of::<Self::Commitment>();
         let bytes = self.recv_bytes(size)?;
 
-        let decommitment = GenericArray::try_from_iter(bytes).unwrap();
+        let decommitment = GenericArray::from_exact_iter(bytes).unwrap();
 
         self.states.increment_hash_count();
         Ok(decommitment)

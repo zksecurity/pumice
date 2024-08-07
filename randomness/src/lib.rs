@@ -6,7 +6,7 @@ use generic_array::ArrayLength;
 use std::vec::Vec;
 
 pub trait Prng {
-    type DigestSize: ArrayLength;
+    type DigestSize: ArrayLength<u8>;
 
     fn new() -> Self;
     fn new_with_seed(seed: &[u8]) -> Self;
