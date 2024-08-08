@@ -4,6 +4,7 @@ use super::{Channel, FSChannel, ProverChannel, VerifierChannel};
 use ark_ff::PrimeField;
 use blake2::Blake2s256;
 use felt::Felt252;
+use generic_array::typenum::U32;
 use generic_array::{ArrayLength, GenericArray};
 use hex_literal::hex;
 use paste::paste;
@@ -68,7 +69,7 @@ impl<W: Digest> TestFixtures for Poseidon3TestTypes<W> {
     type Prng = randomness::poseidon3::PrngPoseidon3;
     type VerifierChannel = FSVerifierChannel<Felt252, Self::Prng, W>;
     type ProverChannel = FSProverChannel<Felt252, Self::Prng, W>;
-    type DigestSize = <Self::Prng as Prng>::DigestSize;
+    type DigestSize = U32;
     type TestField = Felt252;
 
     const TEST_DIGEST_NUM_BYTES: usize =
@@ -116,7 +117,7 @@ impl TestFixtures for Keccak256TestTypes {
     type Prng = randomness::keccak256::PrngKeccak256;
     type VerifierChannel = FSVerifierChannel<Felt252, Self::Prng, Sha3_256>;
     type ProverChannel = FSProverChannel<Felt252, Self::Prng, Sha3_256>;
-    type DigestSize = <Self::Prng as Prng>::DigestSize;
+    type DigestSize = U32;
     type TestField = Felt252;
 
     const TEST_DIGEST_NUM_BYTES: usize =

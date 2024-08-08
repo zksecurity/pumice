@@ -2,12 +2,9 @@ mod hash_chain;
 pub mod keccak256;
 pub mod poseidon3;
 
-use generic_array::ArrayLength;
 use std::vec::Vec;
 
 pub trait Prng {
-    type DigestSize: ArrayLength<u8>;
-
     fn new() -> Self;
     fn new_with_seed(seed: &[u8]) -> Self;
 

@@ -1,6 +1,7 @@
 use crate::pow::ProofOfWorkVerifier;
 use crate::{channel_states::ChannelStates, Channel, FSChannel, VerifierChannel};
 use ark_ff::PrimeField;
+use generic_array::typenum::U32;
 use generic_array::GenericArray;
 use num_bigint::BigUint;
 use randomness::Prng;
@@ -49,7 +50,7 @@ impl<F: PrimeField, P: Prng, W: Digest> FSVerifierChannel<F, P, W> {
 
 impl<F: PrimeField, P: Prng, W: Digest> Channel for FSVerifierChannel<F, P, W> {
     type Field = F;
-    type Commitment = GenericArray<u8, P::DigestSize>;
+    type Commitment = GenericArray<u8, U32>;
 
     fn draw_number(&mut self, upper_bound: u64) -> u64 {
         assert!(

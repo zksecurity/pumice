@@ -1,0 +1,20 @@
+[package]
+name = "commitment_scheme"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ark-ff.workspace = true
+blake2.workspace = true
+thiserror.workspace = true
+sha3.workspace = true
+poseidon = { path = "../poseidon" }
+felt = { path = "../felt" }
+generic-array.workspace = true
+channel = { path = "../channel" }
+randomness ={ path = "../randomness" }
+anyhow.workspace = true
+
+[dev-dependencies]
+hex.workspace = true 
+rand.workspace = true
