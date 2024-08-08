@@ -1,4 +1,5 @@
 pub mod hash;
+pub mod merkle_commitment_scheme;
 use crate::merkle::hash::Hasher;
 use generic_array::GenericArray;
 use thiserror::Error;
@@ -110,7 +111,6 @@ impl<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>> MerkleTree<F, 
     ///
     /// Returns an Option<bool> which is true if data_to_verify is present in the tree.
     pub fn verify_decommitment<P: Prng, W: Digest>(
-        &self,
         merkle_root: H::Output,
         total_data_length: usize,
         data_to_verify: &[(usize, H::Output)],
@@ -197,6 +197,23 @@ impl<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>> MerkleTree<F, 
 
         Some(())
     }
+}
+
+pub fn bytes_as_hash<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>>(
+    bytes_data: &[u8],
+    size_of_element: usize,
+) -> Vec<H::Output> {
+    let n_elements = bytes_data.len() / size_of_element;
+    let mut bytes_as_hash = Vec::with_capacity(n_elements);
+
+    for hash_idx in 0..n_elements {
+        let offset = hash_idx * size_of_element;
+        let chunk = &bytes_data[offset..offset + size_of_element];
+        let hash: GenericArray<u8, U32> = GenericArray::clone_from_slice(chunk);
+        bytes_as_hash.push(hash);
+    }
+
+    bytes_as_hash
 }
 
 /// Errors returned by Merkle Tree Verification
@@ -952,9 +969,13 @@ mod tests {
         let prng = PrngKeccak256::new();
         let mut verifier_channel: FSVerifierChannel<F, PrngKeccak256, Sha3_256> =
             FSVerifierChannel::new(prng, prover_channel.get_proof());
-        assert!(tree
-            .verify_decommitment(root, data.len(), &query_data, &mut verifier_channel)
-            .unwrap());
+        assert!(MerkleTree::<F, H>::verify_decommitment(
+            root,
+            data.len(),
+            &query_data,
+            &mut verifier_channel
+        )
+        .unwrap());
     }
 
     #[test]
@@ -1331,9 +1352,13 @@ mod tests {
         let prng = PrngKeccak256::new();
         let mut verifier_channel: FSVerifierChannel<F, PrngKeccak256, Sha3_256> =
             FSVerifierChannel::new(prng, prover_channel.get_proof());
-        assert!(!tree
-            .verify_decommitment(root, data.len(), &query_data, &mut verifier_channel)
-            .unwrap());
+        assert!(!MerkleTree::<F, H>::verify_decommitment(
+            root,
+            data.len(),
+            &query_data,
+            &mut verifier_channel
+        )
+        .unwrap());
     }
 
     #[test]
