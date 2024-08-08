@@ -1,6 +1,7 @@
 use crate::pow::{ProofOfWorkProver, POW_DEFAULT_CHUNK_SIZE};
 use crate::{channel_states::ChannelStates, Channel, FSChannel, ProverChannel};
 use ark_ff::{BigInteger, PrimeField};
+use generic_array::typenum::U32;
 use generic_array::GenericArray;
 use num_bigint::BigUint;
 use randomness::Prng;
@@ -48,7 +49,7 @@ impl<F: PrimeField, P: Prng, W: Digest> FSProverChannel<F, P, W> {
 
 impl<F: PrimeField, P: Prng, W: Digest> Channel for FSProverChannel<F, P, W> {
     type Field = F;
-    type Commitment = GenericArray<u8, P::DigestSize>;
+    type Commitment = GenericArray<u8, U32>;
 
     fn draw_number(&mut self, upper_bound: u64) -> u64 {
         assert!(

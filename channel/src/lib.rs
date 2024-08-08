@@ -10,7 +10,7 @@ mod test;
 use ark_ff::PrimeField;
 
 #[allow(dead_code)]
-trait Channel {
+pub trait Channel {
     type Field: PrimeField;
     type Commitment;
 
@@ -27,7 +27,7 @@ trait FSChannel: Channel {
 }
 
 #[allow(dead_code)]
-trait VerifierChannel: Channel {
+pub trait VerifierChannel: Channel {
     fn recv_felts(&mut self, n: usize) -> Result<Vec<Self::Field>, anyhow::Error>;
 
     fn recv_bytes(&mut self, n: usize) -> Result<Vec<u8>, anyhow::Error>;
@@ -40,7 +40,7 @@ trait VerifierChannel: Channel {
 }
 
 #[allow(dead_code)]
-trait ProverChannel: Channel {
+pub trait ProverChannel: Channel {
     fn send_felts(&mut self, felts: &[Self::Field]) -> Result<(), anyhow::Error>;
 
     fn send_bytes(&mut self, bytes: &[u8]) -> Result<(), anyhow::Error>;
