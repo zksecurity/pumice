@@ -76,8 +76,9 @@ impl<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>, P: Prng, W: Di
         let _ = self.channel.send_commit_hash(comm);
     }
 
-    fn start_decommitment_phase(&mut self, queries: Vec<usize>) {
+    fn start_decommitment_phase(&mut self, queries: Vec<usize>) -> Vec<usize> {
         self.queries = queries;
+        vec![]
     }
 
     fn decommit(&mut self, elements_data: &[u8]) {
@@ -95,7 +96,7 @@ pub struct MerkleCommitmentSchemeVerifier<F: PrimeField, H: Hasher<F>, P: Prng, 
 
 impl<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> MerkleCommitmentSchemeVerifier<F, H, P, W> {
     #[allow(dead_code)]
-    fn new(n_elements: usize, channel: FSVerifierChannel<F, P, W>) -> Self {
+    pub fn new(n_elements: usize, channel: FSVerifierChannel<F, P, W>) -> Self {
         Self {
             n_elements,
             channel,

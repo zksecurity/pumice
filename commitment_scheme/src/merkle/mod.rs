@@ -199,6 +199,16 @@ impl<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>> MerkleTree<F, 
     }
 }
 
+/// Given span of bytes, bytes_data, converts and returns them in the format of vector of hash output.
+///
+/// # Arguments
+///
+/// - `bytes_data`: input data bytes.
+/// - `size_of_element`: length of element in bytes.
+///
+/// # Returns
+///
+/// Returns vector of hash output.
 pub fn bytes_as_hash<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>>(
     bytes_data: &[u8],
     size_of_element: usize,
