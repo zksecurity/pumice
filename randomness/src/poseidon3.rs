@@ -1,7 +1,6 @@
 use crate::Prng;
 use ark_ff::{BigInteger, Field, PrimeField};
 use felt::Felt252;
-use generic_array::typenum::U32;
 use poseidon::FieldHasher;
 use poseidon::Poseidon3;
 use std::vec::Vec;
@@ -14,8 +13,6 @@ pub struct PrngPoseidon3 {
 }
 
 impl Prng for PrngPoseidon3 {
-    type DigestSize = U32;
-
     fn new() -> Self {
         PrngPoseidon3 {
             state: Felt252::ZERO,
@@ -83,6 +80,10 @@ impl Prng for PrngPoseidon3 {
 
     fn hash_name() -> &'static str {
         "Poseidon3"
+    }
+
+    fn digest_size() -> usize {
+        32
     }
 
     fn bytes_chunk_size() -> usize {
