@@ -1,6 +1,5 @@
 use crate::hash_chain::HashChain;
 use crate::Prng;
-use generic_array::typenum::U32;
 use std::vec::Vec;
 
 pub use sha3::Sha3_256;
@@ -12,8 +11,6 @@ pub struct PrngKeccak256 {
 }
 
 impl Prng for PrngKeccak256 {
-    type DigestSize = U32;
-
     fn new() -> Self {
         let seed = [0u8; 32];
         PrngKeccak256 {
@@ -60,6 +57,10 @@ impl Prng for PrngKeccak256 {
 
     fn hash_name() -> &'static str {
         "Keccak256"
+    }
+
+    fn digest_size() -> usize {
+        32
     }
 
     fn bytes_chunk_size() -> usize {

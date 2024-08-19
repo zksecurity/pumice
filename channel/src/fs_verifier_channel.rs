@@ -1,7 +1,6 @@
 use crate::pow::ProofOfWorkVerifier;
 use crate::{channel_states::ChannelStates, Channel, FSChannel, VerifierChannel};
 use ark_ff::PrimeField;
-use generic_array::GenericArray;
 use num_bigint::BigUint;
 use randomness::Prng;
 use sha3::Digest;
@@ -49,7 +48,6 @@ impl<F: PrimeField, P: Prng, W: Digest> FSVerifierChannel<F, P, W> {
 
 impl<F: PrimeField, P: Prng, W: Digest> Channel for FSVerifierChannel<F, P, W> {
     type Field = F;
-    type Commitment = GenericArray<u8, P::DigestSize>;
 
     fn draw_number(&mut self, upper_bound: u64) -> u64 {
         assert!(
@@ -148,24 +146,26 @@ impl<F: PrimeField, P: Prng, W: Digest> VerifierChannel for FSVerifierChannel<F,
         Ok(bytes)
     }
 
-    fn recv_commit_hash(&mut self) -> Result<Self::Commitment, anyhow::Error> {
-        let size = std::mem::size_of::<Self::Commitment>();
-        let bytes = self.recv_bytes(size)?;
+    fn recv_commit_hash_default(&mut self) -> Result<Vec<u8>, anyhow::Error> {
+        self.recv_commit_hash(P::digest_size())
+    }
 
-        let commitment = GenericArray::from_exact_iter(bytes).unwrap();
+    fn recv_commit_hash(&mut self, size: usize) -> Result<Vec<u8>, anyhow::Error> {
+        let bytes = self.recv_bytes(size)?;
 
         self.states.increment_commitment_count();
         self.states.increment_hash_count();
-        Ok(commitment)
+        Ok(bytes)
     }
 
-    fn recv_decommit_node(&mut self) -> Result<Self::Commitment, anyhow::Error> {
-        let size = std::mem::size_of::<Self::Commitment>();
+    fn recv_decommit_node_default(&mut self) -> Result<Vec<u8>, anyhow::Error> {
+        self.recv_decommit_node(P::digest_size())
+    }
+
+    fn recv_decommit_node(&mut self, size: usize) -> Result<Vec<u8>, anyhow::Error> {
         let bytes = self.recv_bytes(size)?;
 
-        let decommitment = GenericArray::from_exact_iter(bytes).unwrap();
-
         self.states.increment_hash_count();
-        Ok(decommitment)
+        Ok(bytes)
     }
 }
