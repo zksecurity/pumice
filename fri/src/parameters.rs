@@ -2,7 +2,7 @@ use ark_ff::Field;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
-pub trait FftBases {}
+use crate::FftBases;
 
 #[derive(Deserialize)]
 pub struct FriParameters<F: Field, B: FftBases> {
