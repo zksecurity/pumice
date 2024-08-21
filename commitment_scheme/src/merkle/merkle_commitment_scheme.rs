@@ -27,19 +27,17 @@ pub struct MerkleCommitmentSchemeProver<F: PrimeField, H: Hasher<F>, P: Prng, W:
 
 impl<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> MerkleCommitmentSchemeProver<F, H, P, W> {
     #[allow(dead_code)]
-    fn new(
+    pub fn new(
         n_elements: usize,
         channel: FSProverChannel<F, P, W>,
-        min_segment_bytes: usize,
-        size_of_element: usize,
     ) -> Self {
         let tree = MerkleTree::new(n_elements);
         Self {
             n_elements,
             channel,
             tree,
-            min_segment_bytes,
-            size_of_element,
+            min_segment_bytes: 2 * H::DIGEST_NUM_BYTES,
+            size_of_element: H::DIGEST_NUM_BYTES,
             queries: vec![0],
         }
     }

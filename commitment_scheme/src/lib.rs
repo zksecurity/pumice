@@ -1,15 +1,17 @@
 pub mod merkle;
 pub mod packaging_commitment_scheme;
 pub mod packer_hasher;
+pub mod table_utils;
+// pub mod table_verifier;
 use std::vec::Vec;
 
 use ark_ff::PrimeField;
-use channel::fs_verifier_channel::FSVerifierChannel;
+use channel::{fs_prover_channel::FSProverChannel, fs_verifier_channel::FSVerifierChannel};
 use merkle::{
     hash::{Blake2s256Hasher, Keccak256Hasher},
-    merkle_commitment_scheme::MerkleCommitmentSchemeVerifier,
+    merkle_commitment_scheme::{MerkleCommitmentSchemeProver, MerkleCommitmentSchemeVerifier},
 };
-use packaging_commitment_scheme::PackagingCommitmentSchemeVerifier;
+use packaging_commitment_scheme::{PackagingCommitmentSchemeProver, PackagingCommitmentSchemeVerifier};
 use randomness::Prng;
 use sha3::Digest;
 
@@ -78,6 +80,199 @@ impl CommitmentHashes {
             &self.bottom_hash
         }
     }
+}
+
+
+fn calculate_n_verifier_friendly_layers_in_segment(
+    n_segments: usize,
+    n_layers_in_segment: usize,
+    n_verifier_friendly_commitment_layers: usize,
+) -> usize {
+    // No verifier-friendly commitment layers at all.
+    if n_verifier_friendly_commitment_layers == 0 {
+        return 0;
+    }
+
+    // The height of the top subtree with `n_segments` leaves.
+    let segment_tree_height = n_segments.ilog2() as usize;
+    let total_n_layers = n_layers_in_segment + segment_tree_height;
+
+    if n_verifier_friendly_commitment_layers >= total_n_layers {
+        // All layers are verifier-friendly commitment layers.
+        return n_layers_in_segment;
+    }
+
+    assert!(
+        n_verifier_friendly_commitment_layers >= segment_tree_height,
+        "The top {} layers should use the same hash. n_verifier_friendly_commitment_layers: {}",
+        segment_tree_height,
+        n_verifier_friendly_commitment_layers
+    );
+    n_verifier_friendly_commitment_layers - segment_tree_height
+}
+
+fn create_all_commitment_scheme_layers<F, P, W>(
+    _n_out_of_memory_merkle_layers: usize,
+    n_elements_in_segment: usize,
+    n_segments: usize,
+    channel: FSProverChannel<F, P, W>,
+    n_verifier_friendly_commitment_layers: usize,
+    commitment_hashes: CommitmentHashes,
+) -> Box<dyn CommitmentSchemeProver> 
+where 
+    F: PrimeField,
+    P: Prng + Clone + 'static,
+    W: Digest + Clone + 'static,
+{
+    // Create the innermost layer which holds the Merkle Tree.
+    let is_verifier_friendly_layer = n_verifier_friendly_commitment_layers > 0;
+    let hash_name = commitment_hashes.get_hash_name(is_verifier_friendly_layer);
+    let mut next_inner_layer: Box<dyn CommitmentSchemeProver>;
+    match hash_name.as_str() {
+        "keccak256" => {
+            next_inner_layer = Box::new(
+                MerkleCommitmentSchemeProver::<F, Keccak256Hasher<F>, P, W>::new(
+                    n_segments,
+                    channel.clone(),
+                ),
+            )
+        }
+        "blake2s256" => {
+            next_inner_layer = Box::new(MerkleCommitmentSchemeProver::<
+                F,
+                Blake2s256Hasher<F>,
+                P,
+                W,
+            >::new(n_segments, channel.clone()))
+        }
+        &_ => todo!(),
+    };
+
+    let n_layers_in_segment = n_elements_in_segment.ilog2() as usize;
+    // let n_in_memory_layers = n_layers_in_segment - std::cmp::min(n_out_of_memory_merkle_layers, n_layers_in_segment);
+
+    let n_verifier_friendly_layers_in_segment = calculate_n_verifier_friendly_layers_in_segment(
+        n_segments,
+        n_layers_in_segment,
+        n_verifier_friendly_commitment_layers,
+    );
+    assert!(
+        n_verifier_friendly_layers_in_segment <= n_layers_in_segment,
+        "n_verifier_friendly_layers_in_segment is too big"
+    );
+
+    let mut cur_n_elements_in_segment = 1;
+    for layer in 0..n_layers_in_segment {
+        cur_n_elements_in_segment *= 2;
+        assert!(
+            cur_n_elements_in_segment <= n_elements_in_segment,
+            "Too many elements in a segment: {}. Should be at most: {}",
+            cur_n_elements_in_segment,
+            n_elements_in_segment
+        );
+
+        // Packaging commitment scheme layer.
+        let is_verifier_friendly_layer = layer < n_verifier_friendly_layers_in_segment;
+
+        let hash_name = commitment_hashes.get_hash_name(is_verifier_friendly_layer);
+        match hash_name.as_str() {
+            "keccak256" => {
+                next_inner_layer = Box::new(
+                    PackagingCommitmentSchemeProver::<F, Keccak256Hasher<F>, P, W>::new_with_existing(
+                        32,
+                        cur_n_elements_in_segment,
+                        n_segments,
+                        channel.clone(),
+                        next_inner_layer
+                    ),
+                )
+            }
+            "blake2s256" => {
+                next_inner_layer = Box::new(
+                    PackagingCommitmentSchemeProver::<F, Blake2s256Hasher<F>, P, W>::new_with_existing(
+                        32,
+                        cur_n_elements_in_segment,
+                        n_segments,
+                        channel.clone(),
+                        next_inner_layer
+                    ),
+                )
+            }
+            &_ => todo!(),
+        };
+    }
+    next_inner_layer
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn make_commitment_scheme_prover<F, P, W>(
+    size_of_element: usize,
+    n_elements_in_segment: usize,
+    n_segments: usize,
+    channel: &mut FSProverChannel<F, P, W>,
+    n_verifier_friendly_commitment_layers: usize,
+    commitment_hashes: CommitmentHashes,
+    n_columns: usize,
+    n_out_of_memory_merkle_layers: usize,
+) -> Box<dyn CommitmentSchemeProver>
+where 
+    F: PrimeField,
+    P: Prng + Clone + 'static,
+    W: Digest + Clone + 'static,
+{
+    // Calculate the number of layers in the segment and the total height
+    let n_layers_in_segment = n_elements_in_segment.ilog2() as usize - if n_columns == 1 { 1 } else { 0 };
+    let segment_tree_height = n_segments.ilog2() as usize;
+    let total_height = n_layers_in_segment + segment_tree_height;
+    let is_verifier_friendly_layer = total_height < n_verifier_friendly_commitment_layers;
+
+    // Invoke the commitment_hashes to determine the hash function and create the commitment scheme
+    let commitment_hashes_cloned = commitment_hashes.clone();
+    let hash_name = commitment_hashes_cloned.get_hash_name(is_verifier_friendly_layer);
+    let commitment_scheme: Box<dyn CommitmentSchemeProver>;
+
+    let channel_clone = channel.clone();
+
+    let inner_commitment_scheme_factory = Box::new(move |n_elements_inner_layer: usize| {
+        create_all_commitment_scheme_layers(
+            n_out_of_memory_merkle_layers,
+            n_elements_inner_layer / n_segments,
+            n_segments,
+            channel_clone,
+            n_verifier_friendly_commitment_layers,
+            commitment_hashes,
+        )
+    });
+
+    match hash_name.as_str() {
+        "keccak256" => {
+            commitment_scheme = Box::new(
+                PackagingCommitmentSchemeProver::<F, Keccak256Hasher<F>, P, W>::new(
+                    size_of_element,
+                    n_elements_in_segment,
+                    n_segments,
+                    channel.clone(),
+                    inner_commitment_scheme_factory,
+                    false,
+                ),
+            )
+        }
+        "blake2s256" => {
+            commitment_scheme = Box::new(
+                PackagingCommitmentSchemeProver::<F, Blake2s256Hasher<F>, P, W>::new(
+                    size_of_element,
+                    n_elements_in_segment,
+                    n_segments,
+                    channel.clone(),
+                    inner_commitment_scheme_factory,
+                    false,
+                ),
+            )
+        }
+        &_ => todo!(),
+    };
+
+    commitment_scheme
 }
 
 /// Creates log(n_elements) + 1 commitment scheme layers for verification.
@@ -232,4 +427,203 @@ where
     };
 
     commitment_scheme
+}
+
+
+mod tests {
+
+    use std::marker::PhantomData;
+    use std::collections::HashMap;
+    use merkle::hash::Hasher;
+    use generic_array::GenericArray;
+    use generic_array::typenum::U32;
+    use randomness::keccak256::PrngKeccak256;
+    use channel::ProverChannel;
+
+
+    use super::*;
+
+    #[allow(dead_code)]
+    pub trait CommitmentSchemePair<F: PrimeField, P: Prng, W: Digest> {
+        type Prover: CommitmentSchemeProver;
+        type Verifier: CommitmentSchemeVerifier;
+        type Hash: Hasher<F>;
+
+        fn create_prover(
+            prover_channel: FSProverChannel<F, P, W>,
+            size_of_element: usize,
+            n_elements_in_segment: usize,
+            n_segments: usize,
+            n_layers: usize,
+            n_verifier_friendly_commitment_layers: usize,
+        ) -> Self::Prover;
+    
+        fn create_verifier(
+            verifier_channel: FSVerifierChannel<F, P, W>,
+            size_of_element: usize,
+            n_elements: usize,
+            n_verifier_friendly_commitment_layers: usize,
+        ) -> Self::Verifier;
+    
+        fn draw_size_of_element(prng: &mut PrngKeccak256) -> usize;
+    
+        const IS_MERKLE: bool;
+        const MIN_ELEMENT_SIZE: usize;
+    }
+
+    pub struct MerkleCommitmentSchemePairT<F: PrimeField, H: Hasher<F>> {
+        _ph: PhantomData<(F, H)>
+    }
+    
+    impl<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>, P: Prng, W: Digest> CommitmentSchemePair<F, P, W> for MerkleCommitmentSchemePairT<F, H> {
+        // Define Prover and Verifier types
+        type Hash = H;
+        type Prover = MerkleCommitmentSchemeProver<F, H, P, W>;
+        type Verifier = MerkleCommitmentSchemeVerifier<F, H, P, W>;
+    
+        // CreateProver function
+        fn create_prover(
+            prover_channel: FSProverChannel<F, P, W>,
+            _size_of_element: usize,
+            n_elements_in_segment: usize,
+            n_segments: usize,
+            _n_layers: usize,
+            _n_verifier_friendly_commitment_layers: usize,
+        ) -> Self::Prover {
+            assert!(n_elements_in_segment == 1);
+            
+            Self::Prover::new(n_segments, prover_channel)
+        }
+    
+        // CreateVerifier function
+        fn create_verifier(
+            verifier_channel: FSVerifierChannel<F, P, W>,
+            _size_of_element: usize,
+            n_elements: usize,
+            _n_verifier_friendly_commitment_layers: usize,
+        ) -> Self::Verifier {
+            Self::Verifier::new(n_elements, verifier_channel)
+        }
+    
+        // DrawSizeOfElement function
+        fn draw_size_of_element(_prng: &mut PrngKeccak256) -> usize {
+            H::DIGEST_NUM_BYTES
+        }
+    
+        // Static constants
+        const IS_MERKLE: bool = true;
+        const MIN_ELEMENT_SIZE: usize = H::DIGEST_NUM_BYTES;
+    }
+
+    #[allow(dead_code)]
+    pub struct CommitmentScheme<F: PrimeField, P: Prng, W: Digest, T: CommitmentSchemePair<F, P, W>> {
+        prng: P,
+        size_of_element: usize,
+        n_elements: usize,
+        n_segments: usize,
+        data: Vec<u8>,
+        queries: Vec<usize>,
+        n_verifier_friendly_commitment_layers: usize,
+        _marker: std::marker::PhantomData<(F, P, W, T)>,
+    }
+
+    
+    #[allow(dead_code)]
+    impl<F: PrimeField, P: Prng + Clone, W: Digest + Clone, T: CommitmentSchemePair<F, P, W>> CommitmentScheme<F, P, W, T> {
+
+        pub fn new(
+            prng: P,
+            n_elements: usize,
+            n_segments: usize,
+            data: Vec<u8>,
+            queries: Vec<usize>,
+            n_verifier_friendly_commitment_layers: usize,
+        ) -> Self {
+            let size_of_element = T::Hash::DIGEST_NUM_BYTES;
+            CommitmentScheme {
+                prng,
+                size_of_element,
+                n_elements,
+                n_segments,
+                data,
+                queries,
+                n_verifier_friendly_commitment_layers,
+                _marker: std::marker::PhantomData,
+            }
+        }
+
+        pub fn get_prover_channel(&self) -> FSProverChannel<F, P, W> {
+            FSProverChannel::new(self.prng.clone())
+        }
+    
+        pub fn get_verifier_channel(&self, proof: &[u8]) -> FSVerifierChannel<F, P, W> {
+            FSVerifierChannel::new(self.prng.clone(), proof.to_vec())
+        }
+
+        fn get_num_segments(&self) -> usize {
+            self.n_segments
+        }
+    
+        fn get_num_elements_in_segment(&self) -> usize {
+            self.n_elements / self.n_segments
+        }
+
+        fn get_segment(&self, index: usize) -> &[u8] {
+            let n_segment_bytes = self.size_of_element * self.get_num_elements_in_segment();
+            &self.data[index * n_segment_bytes..(index + 1) * n_segment_bytes]
+        }
+    
+        fn get_element(&self, index: usize) -> &[u8] {
+            &self.data[index * self.size_of_element..(index + 1) * self.size_of_element]
+        }
+    
+        pub fn get_sparse_data(&self) -> HashMap<usize, Vec<u8>> {
+            self.queries
+                .iter()
+                .map(|&q| (q, self.get_element(q).to_vec()))
+                .collect()
+        }
+
+        pub fn generate_proof(&self, n_out_of_memory_layers: usize, include_decommitment: bool) -> Vec<u8> {
+            let prover_channel = self.get_prover_channel();
+            let mut committer = T::create_prover(
+                prover_channel.clone(),
+                self.size_of_element,
+                self.get_num_elements_in_segment(),
+                self.n_segments,
+                n_out_of_memory_layers,
+                self.n_verifier_friendly_commitment_layers,
+            );
+    
+            for i in 0..self.n_segments {
+                let segment = self.get_segment(i);
+                committer.add_segment_for_commitment(segment, i);
+            }
+            committer.commit();
+    
+            if include_decommitment {
+                let element_idxs = committer.start_decommitment_phase(self.queries.clone());
+                let elements_data: Vec<u8> = element_idxs
+                    .iter()
+                    .flat_map(|&idx| self.get_element(idx)).cloned()
+                    .collect();
+                committer.decommit(&elements_data);
+            }
+    
+            prover_channel.get_proof()
+        }
+
+        pub fn verify_proof(&self, proof: &[u8], elements_to_verify: &[(usize, std::vec::Vec<u8>)]) -> bool {
+            let verifier_channel = self.get_verifier_channel(proof);
+            let mut verifier = T::create_verifier(
+                verifier_channel,
+                self.size_of_element,
+                self.n_elements,
+                self.n_verifier_friendly_commitment_layers,
+            );
+    
+            let _ = verifier.read_commitment();
+            verifier.verify_integrity(elements_to_verify).unwrap()
+        }
+    }
 }
