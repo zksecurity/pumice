@@ -479,12 +479,12 @@ mod tests {
         const MIN_ELEMENT_SIZE: usize;
     }
 
-    pub struct MerkleCommitmentSchemePairT<F: PrimeField, H: Hasher<F>> {
+    pub struct MerkleCommitmentSchemePair<F: PrimeField, H: Hasher<F>> {
         _ph: PhantomData<(F, H)>,
     }
 
     impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
-        CommitmentSchemePair<F, P, W> for MerkleCommitmentSchemePairT<F, H>
+        CommitmentSchemePair<F, P, W> for MerkleCommitmentSchemePair<F, H>
     {
         // Define Prover and Verifier types
         type Hash = H;
@@ -527,7 +527,7 @@ mod tests {
 
     #[allow(dead_code)]
     pub struct CommitmentScheme<F: PrimeField, P: Prng, W: Digest, T: CommitmentSchemePair<F, P, W>> {
-        prng: P,
+        channel_prng: P,
         size_of_element: usize,
         n_elements: usize,
         n_segments: usize,
@@ -542,7 +542,7 @@ mod tests {
         CommitmentScheme<F, P, W, T>
     {
         pub fn new(
-            prng: P,
+            channel_prng: P,
             n_elements: usize,
             n_segments: usize,
             data: Vec<u8>,
@@ -551,7 +551,7 @@ mod tests {
         ) -> Self {
             let size_of_element = T::Hash::DIGEST_NUM_BYTES;
             CommitmentScheme {
-                prng,
+                channel_prng,
                 size_of_element,
                 n_elements,
                 n_segments,
@@ -563,11 +563,11 @@ mod tests {
         }
 
         pub fn get_prover_channel(&self) -> FSProverChannel<F, P, W> {
-            FSProverChannel::new(self.prng.clone())
+            FSProverChannel::new(self.channel_prng.clone())
         }
 
         pub fn get_verifier_channel(&self, proof: &[u8]) -> FSVerifierChannel<F, P, W> {
-            FSVerifierChannel::new(self.prng.clone(), proof.to_vec())
+            FSVerifierChannel::new(self.channel_prng.clone(), proof.to_vec())
         }
 
         fn get_num_segments(&self) -> usize {
