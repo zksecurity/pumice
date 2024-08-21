@@ -25,10 +25,7 @@ pub struct MerkleCommitmentSchemeProver<F: PrimeField, H: Hasher<F>, P: Prng, W:
 
 impl<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> MerkleCommitmentSchemeProver<F, H, P, W> {
     #[allow(dead_code)]
-    pub fn new(
-        n_elements: usize,
-        channel: FSProverChannel<F, P, W>,
-    ) -> Self {
+    pub fn new(n_elements: usize, channel: FSProverChannel<F, P, W>) -> Self {
         let tree = MerkleTree::new(n_elements);
         Self {
             n_elements,
@@ -41,8 +38,8 @@ impl<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> MerkleCommitmentSchemeProv
     }
 }
 
-impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
-    CommitmentSchemeProver for MerkleCommitmentSchemeProver<F, H, P, W>
+impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> CommitmentSchemeProver
+    for MerkleCommitmentSchemeProver<F, H, P, W>
 {
     fn num_segments(&self) -> usize {
         self.n_elements
@@ -101,8 +98,8 @@ impl<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> MerkleCommitmentSchemeVeri
     }
 }
 
-impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
-    CommitmentSchemeVerifier for MerkleCommitmentSchemeVerifier<F, H, P, W>
+impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> CommitmentSchemeVerifier
+    for MerkleCommitmentSchemeVerifier<F, H, P, W>
 {
     fn read_commitment(&mut self) -> Result<(), anyhow::Error> {
         self.comm = self.channel.recv_commit_hash(H::DIGEST_NUM_BYTES)?;

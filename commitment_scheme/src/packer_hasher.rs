@@ -282,7 +282,11 @@ pub fn hash_elements_two_to_one<F: PrimeField, H: Hasher<F, Output = Vec<u8>>>(
     // Compute the next hash layer.
     let mut res = Vec::with_capacity(n_elements_next_layer * H::DIGEST_NUM_BYTES);
     for i in 0..n_elements_next_layer {
-        let mut next_hash = H::node(&[bytes_as_hash[i * 2].clone(), bytes_as_hash[i * 2 + 1].clone()]).to_vec();
+        let mut next_hash = H::node(&[
+            bytes_as_hash[i * 2].clone(),
+            bytes_as_hash[i * 2 + 1].clone(),
+        ])
+        .to_vec();
         res.append(&mut next_hash);
     }
 

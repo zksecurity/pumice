@@ -37,10 +37,7 @@ impl Ord for RowCol {
     }
 }
 
-pub fn all_query_rows(
-    data_queries: &[RowCol],
-    integrity_queries: &[RowCol],
-) -> Vec<usize> {
+pub fn all_query_rows(data_queries: &[RowCol], integrity_queries: &[RowCol]) -> Vec<usize> {
     let mut all_query_rows = Vec::new();
     for query in data_queries.iter() {
         all_query_rows.push(query.get_row());
@@ -57,7 +54,7 @@ pub fn elements_to_be_transmitted(
     integrity_queries: &[RowCol],
 ) -> Vec<RowCol> {
     let mut to_be_transmitted = Vec::new();
-    
+
     for &row in all_query_rows.iter() {
         for col in 0..n_columns {
             let query_loc = RowCol::new(row, col);

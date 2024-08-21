@@ -45,7 +45,7 @@ impl<F: PrimeField> Hasher<F> for Blake2s256Hasher<F> {
     fn node(input: &[Self::Output]) -> Self::Output {
         let mut hasher = Blake2s256::new();
         input.iter().for_each(|f| {
-            assert_eq!(f.len(), Self::DIGEST_NUM_BYTES); 
+            assert_eq!(f.len(), Self::DIGEST_NUM_BYTES);
             hasher.update(f)
         });
         let hash = hasher.finalize().to_vec();
@@ -84,7 +84,7 @@ impl<F: PrimeField> Hasher<F> for Keccak256Hasher<F> {
     fn node(input: &[Self::Output]) -> Self::Output {
         let mut hasher = Keccak256::new();
         input.iter().for_each(|f| {
-            assert_eq!(f.len(), Self::DIGEST_NUM_BYTES); 
+            assert_eq!(f.len(), Self::DIGEST_NUM_BYTES);
             hasher.update(f)
         });
         let hash = hasher.finalize().to_vec();
@@ -107,7 +107,6 @@ impl Hasher<Felt252> for Poseidon3<Felt252> {
     type Output = Vec<u8>;
 
     fn leaf(input: &[Felt252]) -> Self::Output {
-        
         let hash = Poseidon3::hash(input).into_bigint().to_bytes_be();
 
         let mut array = [0u8; 32];

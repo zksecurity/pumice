@@ -99,8 +99,8 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
     }
 }
 
-impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
-    CommitmentSchemeProver for PackagingCommitmentSchemeProver<F, H, P, W>
+impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> CommitmentSchemeProver
+    for PackagingCommitmentSchemeProver<F, H, P, W>
 {
     fn element_length_in_bytes(&self) -> usize {
         self.size_of_element
@@ -287,8 +287,8 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
 }
 
 /// Implement CommitmentSchemeVerifier trait for PackagingCommitmentSchemeVerifier
-impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
-    CommitmentSchemeVerifier for PackagingCommitmentSchemeVerifier<F, H, P, W>
+impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> CommitmentSchemeVerifier
+    for PackagingCommitmentSchemeVerifier<F, H, P, W>
 {
     fn num_of_elements(&self) -> usize {
         self.n_elements
