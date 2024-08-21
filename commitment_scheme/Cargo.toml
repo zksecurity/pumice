@@ -10,7 +10,6 @@ thiserror.workspace = true
 sha3.workspace = true
 poseidon = { path = "../poseidon" }
 felt = { path = "../felt" }
-generic-array.workspace = true
 channel = { path = "../channel" }
 randomness ={ path = "../randomness" }
 anyhow.workspace = true

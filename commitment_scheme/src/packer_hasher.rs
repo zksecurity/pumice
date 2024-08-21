@@ -1,6 +1,4 @@
 use ark_ff::PrimeField;
-use generic_array::typenum::U32;
-use generic_array::GenericArray;
 
 use crate::merkle::bytes_as_hash;
 use crate::merkle::hash::Hasher;
@@ -17,7 +15,7 @@ pub struct PackerHasher<F: PrimeField, H: Hasher<F>> {
     _ph: PhantomData<(F, H)>,
 }
 
-impl<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>> PackerHasher<F, H> {
+impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>> PackerHasher<F, H> {
     /// Constructs a new PackerHasher.
     ///
     /// # Arguments
@@ -233,7 +231,7 @@ fn compute_num_elements_in_package(
 /// # Returns
 ///
 /// Returns the resulting sequence of hashes as vector of bytes.
-pub fn hash_elements<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>>(
+pub fn hash_elements<F: PrimeField, H: Hasher<F, Output = Vec<u8>>>(
     data: &[u8],
     n_elements: usize,
 ) -> Vec<u8> {
@@ -266,7 +264,7 @@ pub fn hash_elements<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>
 /// # Returns
 ///
 /// Returns the resulting sequence of hashes as vector of bytes.
-pub fn hash_elements_two_to_one<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>>(
+pub fn hash_elements_two_to_one<F: PrimeField, H: Hasher<F, Output = Vec<u8>>>(
     data: &[u8],
 ) -> Vec<u8> {
     // If data is empty, return an empty vector.
@@ -284,7 +282,7 @@ pub fn hash_elements_two_to_one<F: PrimeField, H: Hasher<F, Output = GenericArra
     // Compute the next hash layer.
     let mut res = Vec::with_capacity(n_elements_next_layer * H::DIGEST_NUM_BYTES);
     for i in 0..n_elements_next_layer {
-        let mut next_hash = H::node(&[bytes_as_hash[i * 2], bytes_as_hash[i * 2 + 1]]).to_vec();
+        let mut next_hash = H::node(&[bytes_as_hash[i * 2].clone(), bytes_as_hash[i * 2 + 1].clone()]).to_vec();
         res.append(&mut next_hash);
     }
 

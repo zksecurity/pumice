@@ -435,8 +435,6 @@ mod tests {
     use std::marker::PhantomData;
     use std::collections::HashMap;
     use merkle::hash::Hasher;
-    use generic_array::GenericArray;
-    use generic_array::typenum::U32;
     use randomness::keccak256::PrngKeccak256;
     use channel::ProverChannel;
 
@@ -475,7 +473,7 @@ mod tests {
         _ph: PhantomData<(F, H)>
     }
     
-    impl<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>, P: Prng, W: Digest> CommitmentSchemePair<F, P, W> for MerkleCommitmentSchemePairT<F, H> {
+    impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> CommitmentSchemePair<F, P, W> for MerkleCommitmentSchemePairT<F, H> {
         // Define Prover and Verifier types
         type Hash = H;
         type Prover = MerkleCommitmentSchemeProver<F, H, P, W>;

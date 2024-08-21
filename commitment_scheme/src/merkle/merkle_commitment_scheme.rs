@@ -12,8 +12,6 @@ use randomness::Prng;
 use sha3::Digest;
 
 use super::MerkleTree;
-use crate::merkle::U32;
-use generic_array::GenericArray;
 
 #[allow(dead_code)]
 pub struct MerkleCommitmentSchemeProver<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> {
@@ -43,7 +41,7 @@ impl<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> MerkleCommitmentSchemeProv
     }
 }
 
-impl<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>, P: Prng, W: Digest>
+impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
     CommitmentSchemeProver for MerkleCommitmentSchemeProver<F, H, P, W>
 {
     fn num_segments(&self) -> usize {
@@ -103,27 +101,19 @@ impl<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> MerkleCommitmentSchemeVeri
     }
 }
 
-impl<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>, P: Prng, W: Digest>
+impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
     CommitmentSchemeVerifier for MerkleCommitmentSchemeVerifier<F, H, P, W>
 {
     fn read_commitment(&mut self) -> Result<(), anyhow::Error> {
-        self.comm = self.channel.recv_commit_hash()?;
+        self.comm = self.channel.recv_commit_hash(H::DIGEST_NUM_BYTES)?;
         Ok(())
     }
 
     fn verify_integrity(&mut self, elements_to_verify: &[(usize, Vec<u8>)]) -> Option<bool> {
-        let hashes_to_verify: Vec<(usize, H::Output)> = elements_to_verify
-            .iter()
-            .clone()
-            .map(|(i, b)| {
-                let h: GenericArray<u8, U32> = GenericArray::clone_from_slice(b);
-                (*i, h)
-            })
-            .collect();
         MerkleTree::<F, H>::verify_decommitment(
-            self.comm,
+            self.comm.clone(),
             self.n_elements,
-            &hashes_to_verify,
+            elements_to_verify,
             &mut self.channel,
         )
     }

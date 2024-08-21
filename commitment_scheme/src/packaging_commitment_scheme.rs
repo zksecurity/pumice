@@ -1,4 +1,4 @@
-use crate::merkle::hash::{vec_to_generic_array, Hasher};
+use crate::merkle::hash::Hasher;
 use crate::packer_hasher::PackerHasher;
 use crate::{CommitmentSchemeProver, CommitmentSchemeVerifier};
 use ark_ff::PrimeField;
@@ -6,8 +6,6 @@ use channel::fs_prover_channel::FSProverChannel;
 use channel::fs_verifier_channel::FSVerifierChannel;
 use channel::ProverChannel;
 use channel::VerifierChannel;
-use generic_array::typenum::U32;
-use generic_array::GenericArray;
 use randomness::Prng;
 use sha3::Digest;
 use std::collections::HashMap;
@@ -34,7 +32,7 @@ pub struct PackagingCommitmentSchemeProver<F: PrimeField, H: Hasher<F>, P: Prng,
 }
 
 #[allow(dead_code)]
-impl<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>, P: Prng, W: Digest>
+impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
     PackagingCommitmentSchemeProver<F, H, P, W>
 {
     pub fn new(
@@ -101,7 +99,7 @@ impl<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>, P: Prng, W: Di
     }
 }
 
-impl<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>, P: Prng, W: Digest>
+impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
     CommitmentSchemeProver for PackagingCommitmentSchemeProver<F, H, P, W>
 {
     fn element_length_in_bytes(&self) -> usize {
@@ -179,7 +177,7 @@ impl<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>, P: Prng, W: Di
             let bytes_to_send = &elements_data[start..end];
 
             if self.is_merkle_layer {
-                let digest = vec_to_generic_array(bytes_to_send.to_vec());
+                let digest = bytes_to_send.to_vec();
                 let _ = self.channel.send_decommit_node(digest);
             } else {
                 let _ = self.channel.send_data(bytes_to_send);
@@ -207,7 +205,7 @@ pub struct PackagingCommitmentSchemeVerifier<F: PrimeField, H: Hasher<F>, P: Prn
 }
 
 #[allow(dead_code)]
-impl<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>, P: Prng, W: Digest>
+impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
     PackagingCommitmentSchemeVerifier<F, H, P, W>
 {
     /// Constructs a new PackagingCommitmentSchemeVerifier using the commitment scheme factory input.
@@ -289,7 +287,7 @@ impl<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>, P: Prng, W: Di
 }
 
 /// Implement CommitmentSchemeVerifier trait for PackagingCommitmentSchemeVerifier
-impl<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>, P: Prng, W: Digest>
+impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
     CommitmentSchemeVerifier for PackagingCommitmentSchemeVerifier<F, H, P, W>
 {
     fn num_of_elements(&self) -> usize {
@@ -311,7 +309,7 @@ impl<F: PrimeField, H: Hasher<F, Output = GenericArray<u8, U32>>, P: Prng, W: Di
 
         for &missing_element_idx in &missing_elements_idxs {
             if self.is_merkle_layer {
-                let result_array = self.channel.recv_decommit_node().ok()?;
+                let result_array = self.channel.recv_decommit_node(H::DIGEST_NUM_BYTES).ok()?;
                 full_data_to_verify.insert(missing_element_idx, result_array.to_vec());
             } else {
                 let data = self.channel.recv_data(self.size_of_element).ok()?;
