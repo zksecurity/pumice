@@ -4,8 +4,6 @@ use super::{Channel, FSChannel, ProverChannel, VerifierChannel};
 use ark_ff::PrimeField;
 use blake2::Blake2s256;
 use felt::Felt252;
-use generic_array::typenum::U32;
-use generic_array::{ArrayLength, GenericArray};
 use hex_literal::hex;
 use paste::paste;
 use rand::{Rng, RngCore};
@@ -20,11 +18,8 @@ struct TestFixtureConstants<F: PrimeField> {
 
 trait TestFixtures {
     type Prng: Prng;
-    type VerifierChannel: VerifierChannel<Field = Self::TestField, Commitment = GenericArray<u8, Self::DigestSize>>
-        + FSChannel;
-    type ProverChannel: ProverChannel<Field = Self::TestField, Commitment = GenericArray<u8, Self::DigestSize>>
-        + FSChannel;
-    type DigestSize: ArrayLength<u8>;
+    type VerifierChannel: VerifierChannel<Field = Self::TestField> + FSChannel;
+    type ProverChannel: ProverChannel<Field = Self::TestField> + FSChannel;
     type TestField: PrimeField;
 
     const TEST_DIGEST_NUM_BYTES: usize;
@@ -38,8 +33,9 @@ trait TestFixtures {
         proof: Vec<u8>,
     ) -> Self::VerifierChannel;
 
-    fn generate_initial_state_bytes() -> GenericArray<u8, Self::DigestSize> {
-        let mut bytes = GenericArray::default();
+    fn generate_initial_state_bytes() -> Vec<u8> {
+        let size = Self::Prng::digest_size();
+        let mut bytes = vec![0u8; size];
         rand::thread_rng().fill_bytes(&mut bytes);
         bytes
     }
@@ -51,7 +47,7 @@ trait TestFixtures {
     }
 
     // XXX : Do same functionality as generate_initial_state_bytes, but left this function for clarity
-    fn generate_commitment() -> GenericArray<u8, Self::DigestSize> {
+    fn generate_commitment() -> Vec<u8> {
         Self::generate_initial_state_bytes()
     }
 
@@ -69,7 +65,6 @@ impl<W: Digest> TestFixtures for Poseidon3TestTypes<W> {
     type Prng = randomness::poseidon3::PrngPoseidon3;
     type VerifierChannel = FSVerifierChannel<Felt252, Self::Prng, W>;
     type ProverChannel = FSProverChannel<Felt252, Self::Prng, W>;
-    type DigestSize = U32;
     type TestField = Felt252;
 
     const TEST_DIGEST_NUM_BYTES: usize =
@@ -117,7 +112,6 @@ impl TestFixtures for Keccak256TestTypes {
     type Prng = randomness::keccak256::PrngKeccak256;
     type VerifierChannel = FSVerifierChannel<Felt252, Self::Prng, Sha3_256>;
     type ProverChannel = FSProverChannel<Felt252, Self::Prng, Sha3_256>;
-    type DigestSize = U32;
     type TestField = Felt252;
 
     const TEST_DIGEST_NUM_BYTES: usize =
@@ -349,7 +343,7 @@ fn fri_flow_simulation<T: TestFixtures>() {
     let proof = prover_channel.get_proof();
     let mut verifier_channel = T::generate_verifier_channel(&init_state_bytes, proof);
 
-    let vcommitment1 = verifier_channel.recv_commit_hash().unwrap();
+    let vcommitment1 = verifier_channel.recv_commit_hash_default().unwrap();
     assert_eq!(vcommitment1, pcommitment1);
 
     // first evaluation point
@@ -373,7 +367,7 @@ fn fri_flow_simulation<T: TestFixtures>() {
     let mut vdecommitment1 = Vec::new();
     for _ in 0..15 {
         // FRI layer
-        vdecommitment1.push(verifier_channel.recv_decommit_node().unwrap());
+        vdecommitment1.push(verifier_channel.recv_decommit_node_default().unwrap());
     }
     assert_eq!(vdecommitment1, pdecommitment1);
 }

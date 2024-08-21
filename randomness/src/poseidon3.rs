@@ -82,6 +82,10 @@ impl Prng for PrngPoseidon3 {
         "Poseidon3"
     }
 
+    fn digest_size() -> usize {
+        32
+    }
+
     fn bytes_chunk_size() -> usize {
         Felt252::MODULUS_BIT_SIZE.div_ceil(8) as usize
     }

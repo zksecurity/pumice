@@ -15,5 +15,6 @@ pub trait Prng {
     fn prng_state(&self) -> Vec<u8>;
     fn hash_name() -> &'static str;
 
+    fn digest_size() -> usize;
     fn bytes_chunk_size() -> usize;
 }

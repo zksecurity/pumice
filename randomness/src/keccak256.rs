@@ -59,6 +59,10 @@ impl Prng for PrngKeccak256 {
         "Keccak256"
     }
 
+    fn digest_size() -> usize {
+        32
+    }
+
     fn bytes_chunk_size() -> usize {
         1
     }

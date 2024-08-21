@@ -1,6 +1,5 @@
 mod channel_states;
 pub mod fs_prover_channel;
-// pub mod fs_prover_felt_channel;
 pub mod fs_verifier_channel;
 pub mod pow;
 
@@ -12,7 +11,6 @@ use ark_ff::PrimeField;
 #[allow(dead_code)]
 pub trait Channel {
     type Field: PrimeField;
-    type Commitment;
 
     fn draw_number(&mut self, bound: u64) -> u64;
 
@@ -34,9 +32,13 @@ pub trait VerifierChannel: Channel {
 
     fn recv_data(&mut self, n: usize) -> Result<Vec<u8>, anyhow::Error>;
 
-    fn recv_commit_hash(&mut self) -> Result<Self::Commitment, anyhow::Error>;
+    fn recv_commit_hash_default(&mut self) -> Result<Vec<u8>, anyhow::Error>;
 
-    fn recv_decommit_node(&mut self) -> Result<Self::Commitment, anyhow::Error>;
+    fn recv_commit_hash(&mut self, size: usize) -> Result<Vec<u8>, anyhow::Error>;
+
+    fn recv_decommit_node_default(&mut self) -> Result<Vec<u8>, anyhow::Error>;
+
+    fn recv_decommit_node(&mut self, size: usize) -> Result<Vec<u8>, anyhow::Error>;
 }
 
 #[allow(dead_code)]
@@ -47,9 +49,9 @@ pub trait ProverChannel: Channel {
 
     fn send_data(&mut self, data: &[u8]) -> Result<(), anyhow::Error>;
 
-    fn send_commit_hash(&mut self, commmitment: Self::Commitment) -> Result<(), anyhow::Error>;
+    fn send_commit_hash<T: AsRef<[u8]>>(&mut self, commitment: T) -> Result<(), anyhow::Error>;
 
-    fn send_decommit_node(&mut self, decommitment: Self::Commitment) -> Result<(), anyhow::Error>;
+    fn send_decommit_node<T: AsRef<[u8]>>(&mut self, decommitment: T) -> Result<(), anyhow::Error>;
 
     fn get_proof(&self) -> Vec<u8>;
 }
