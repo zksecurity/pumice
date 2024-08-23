@@ -402,7 +402,11 @@ where
     P: Prng + Clone + 'static,
     W: Digest + Clone + 'static,
 {
-    let n_layers = n_elements.ilog2() as usize - if n_columns == 1 { 1 } else { 0 };
+    let n_layers = if n_elements == 1 {
+        0
+    } else {
+        n_elements.ilog2() as usize - if n_columns == 1 { 1 } else { 0 }
+    };
     let is_verifier_friendly_layer = n_layers < n_verifier_friendly_commitment_layers;
 
     let hashes = commitment_hashes.clone();
