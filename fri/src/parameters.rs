@@ -1,11 +1,11 @@
-use ark_ff::Field;
+use ark_ff::{FftField, Field};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
 use crate::FftBases;
 
-#[derive(Deserialize)]
-pub struct FriParameters<F: Field, B: FftBases> {
+//#[derive(Deserialize)]
+pub struct FriParameters<F: FftField> {
     /*
       A list of fri_step_i (one per FRI layer). FRI reduction in the i-th layer will be 2^fri_step_i
       and the total reduction factor will be $2^{\sum_i \fri_step_i}$. The size of fri_step_list is
@@ -38,7 +38,7 @@ pub struct FriParameters<F: Field, B: FftBases> {
     */
     pub last_layer_degree_bound: u64,
     pub n_queries: usize,
-    pub fft_bases: Option<B>,
+    pub fft_bases: Option<FftBases<F>>,
     pub field: F,
 
     /*
@@ -49,8 +49,8 @@ pub struct FriParameters<F: Field, B: FftBases> {
     pub proof_of_work_bits: usize,
 }
 
-impl<F: Field, B: FftBases> FriParameters<F, B> {
-    pub fn from_json(json: &JsonValue, fft_bases: Option<B>, field: F) -> Self {
+impl<F: FftField> FriParameters<F> {
+    pub fn from_json(json: &JsonValue, fft_bases: Option<FftBases<F>>, field: F) -> Self {
         FriParameters {
             fri_step_list: json["fri_step_list"]
                 .as_array()

@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+channel = { path = "../channel" }
 ark-ff.workspace = true
+ark-poly.workspace = true
 serde_json.workspace = true
 serde.workspace = true
