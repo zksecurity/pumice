@@ -3,6 +3,7 @@ pub mod merkle_commitment_scheme;
 use crate::merkle::hash::Hasher;
 use thiserror::Error;
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::{collections::VecDeque, marker::PhantomData};
 
 use ark_ff::PrimeField;
@@ -112,17 +113,16 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>> MerkleTree<F, H> {
     pub fn verify_decommitment<P: Prng, W: Digest>(
         merkle_root: H::Output,
         total_data_length: usize,
-        data_to_verify: &[(usize, H::Output)],
+        data_to_verify: &BTreeMap<usize, H::Output>,
         channel: &mut FSVerifierChannel<F, P, W>,
     ) -> Option<bool> {
         assert!(total_data_length > 0);
 
         // add the nodes to verify to the set of known nodes
-        let mut queue: VecDeque<(usize, H::Output)> = data_to_verify
-            .iter()
-            .cloned()
-            .map(|(idx, hash)| (idx + total_data_length, hash))
-            .collect();
+        let mut queue: VecDeque<(usize, H::Output)> = VecDeque::new();
+        for (&key, value) in data_to_verify {
+            queue.push_back((key + total_data_length, value.clone()));
+        }
 
         let (mut node_idx, mut node_hash) = queue.front()?.clone();
         let mut sib = [H::Output::default(), H::Output::default()];
@@ -158,12 +158,12 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>> MerkleTree<F, H> {
     ///
     /// # Arguments
     ///
-    /// - `queries_idx`: an array of [position] to query.
+    /// - `queries_idx`: BTreeSet [position] to query.
     /// - `channel`: Prover Channel used to send decommitmnet node.
     #[allow(dead_code)]
     fn generate_decommitment<P: Prng, W: Digest>(
         &self,
-        queries_idx: &[usize],
+        queries_idx: &BTreeSet<usize>,
         channel: &mut FSProverChannel<F, P, W>,
     ) -> Option<()> {
         assert!(!queries_idx.is_empty());
@@ -239,6 +239,8 @@ pub enum MerkleError {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
     use ark_ff::PrimeField;
     use poseidon::Poseidon3;
 
@@ -257,7 +259,7 @@ mod tests {
     use randomness::Prng;
     use sha3::Sha3_256;
 
-    fn hex_to_vec(hex_str: &str) -> Vec<u8> {
+    pub fn hex_to_vec(hex_str: &str) -> Vec<u8> {
         let mut hex_str = String::from(hex_str);
         let padding_length = 64_i32.saturating_sub(hex_str.len() as i32);
         if padding_length > 0 {
@@ -673,12 +675,12 @@ mod tests {
         assert_eq!(root, root_exp);
 
         let num_queries = rng.gen_range(1..=data.len());
-        let mut queries = vec![];
-        let mut query_data = vec![];
+        let mut queries = BTreeSet::new();
+        let mut query_data = BTreeMap::new();
         while queries.len() < num_queries {
             let query = rng.gen_range(0..=(data.len() - 1));
-            queries.push(query);
-            query_data.push((query, data[query].clone()));
+            queries.insert(query);
+            query_data.insert(query, data[query].clone());
         }
 
         let prng = PrngKeccak256::new();
@@ -897,12 +899,12 @@ mod tests {
     fn test_verify_false<F, H>(
         data: &[H::Output],
         root_exp: H::Output,
-        query_data: &[(usize, H::Output)],
+        query_data: &BTreeMap<usize, H::Output>,
     ) where
         F: PrimeField,
         H: Hasher<F, Output = Vec<u8>>,
     {
-        let queries: Vec<usize> = query_data.iter().cloned().map(|(idx, _)| idx).collect();
+        let queries: BTreeSet<usize> = query_data.keys().cloned().collect();
 
         let mut tree = MerkleTree::<F, H>::new(data.len());
         MerkleTree::add_data(&mut tree, data, 0);
@@ -934,10 +936,10 @@ mod tests {
         )];
         let root_exp =
             hex_to_vec("216acdc6a1fe9e6b89605b2eb3452c613b4ebc09af6c8477bf79d69fa9ec1125");
-        let to_verify = [(
+        let to_verify = BTreeMap::from([(
             0,
             hex_to_vec("d7005ac2e5ece2a48746ae40264076edf63fc833532572d359a0c47cbc42c482"),
-        )];
+        )]);
         test_verify_false::<Felt252, Blake2s256Hasher<Felt252>>(&input, root_exp, &to_verify);
 
         let input = [
@@ -946,10 +948,10 @@ mod tests {
         ];
         let root_exp =
             hex_to_vec("b823ac891cee85512521528e1d61cdcad829080392b63f393e46adc213862af9");
-        let to_verify = [(
+        let to_verify = BTreeMap::from([(
             0,
             hex_to_vec("6dc48ad654bc4a3e3c8f3270a987b2782af1707e78e1512018f16fdee124bdbd"),
-        )];
+        )]);
         test_verify_false::<Felt252, Blake2s256Hasher<Felt252>>(&input, root_exp, &to_verify);
 
         let input = [
@@ -958,7 +960,7 @@ mod tests {
         ];
         let root_exp =
             hex_to_vec("b823ac891cee85512521528e1d61cdcad829080392b63f393e46adc213862af9");
-        let to_verify = [
+        let to_verify = BTreeMap::from([
             (
                 0,
                 hex_to_vec("d7005ac2e5ece2a48746ae40264076edf63fc833532572d359a0c47cbc42c482"),
@@ -967,7 +969,7 @@ mod tests {
                 1,
                 hex_to_vec("d7005ac2e5ece2a48746ae40264076edf63fc833532572d359a0c47cbc42c482"),
             ),
-        ];
+        ]);
         test_verify_false::<Felt252, Blake2s256Hasher<Felt252>>(&input, root_exp, &to_verify);
 
         let input = [
@@ -978,7 +980,7 @@ mod tests {
         ];
         let root_exp =
             hex_to_vec("57989eb39d929071d2f3a4400067d00e4d77671d9ed682a8cdd2d4e11d3f5aea");
-        let to_verify = [
+        let to_verify = BTreeMap::from([
             (
                 0,
                 hex_to_vec("1363b8220c90c05d93c279ab287fadfe2e223543ca46dee65b32ecd7d7bc891c"),
@@ -995,7 +997,7 @@ mod tests {
                 3,
                 hex_to_vec("aa7ea89c5a679c4aa2c7f85d58988bc42eb97828f5bf18a8fca88f52fe3cf933"),
             ),
-        ];
+        ]);
         test_verify_false::<Felt252, Blake2s256Hasher<Felt252>>(&input, root_exp, &to_verify);
 
         let input = [
@@ -1006,7 +1008,7 @@ mod tests {
         ];
         let root_exp =
             hex_to_vec("57989eb39d929071d2f3a4400067d00e4d77671d9ed682a8cdd2d4e11d3f5aea");
-        let to_verify = [
+        let to_verify = BTreeMap::from([
             (
                 1,
                 hex_to_vec("12ee05a2b647db0371c79c13842574c13ccc3610faa888aa4ec4764407fe84ed"),
@@ -1019,7 +1021,7 @@ mod tests {
                 3,
                 hex_to_vec("1c16cd6af66980b3f38f66a213a82b0c5d3480296d6315d12ea3862e72e29a8c"),
             ),
-        ];
+        ]);
         test_verify_false::<Felt252, Blake2s256Hasher<Felt252>>(&input, root_exp, &to_verify);
 
         let input = [
@@ -1030,7 +1032,7 @@ mod tests {
         ];
         let root_exp =
             hex_to_vec("57989eb39d929071d2f3a4400067d00e4d77671d9ed682a8cdd2d4e11d3f5aea");
-        let to_verify = [
+        let to_verify = BTreeMap::from([
             (
                 0,
                 hex_to_vec("1363b8220c90c05d93c279ab287fadfe2e223543ca46dee65b32ecd7d7bc891c"),
@@ -1039,7 +1041,7 @@ mod tests {
                 3,
                 hex_to_vec("1363b8220c90c05d93c279ab287fadfe2e223543ca46dee65b32ecd7d7bc891c"),
             ),
-        ];
+        ]);
         test_verify_false::<Felt252, Blake2s256Hasher<Felt252>>(&input, root_exp, &to_verify);
 
         let input = [
@@ -1054,7 +1056,7 @@ mod tests {
         ];
         let root_exp =
             hex_to_vec("594e2c4c084f406df0130a252fe030a64a1539225e2b4156f04cf4cefcd75b01");
-        let to_verify = [
+        let to_verify = BTreeMap::from([
             (
                 2,
                 hex_to_vec("7cf9a07e6169885c6c2a3e8e32ea3aec234d79095a775aeaf04250276c77ed89"),
@@ -1075,7 +1077,7 @@ mod tests {
                 7,
                 hex_to_vec("0c5ba953f251b55655ac4cda2622f13e4d68016a3297ff29e0b8d21984ccc33a"),
             ),
-        ];
+        ]);
         test_verify_false::<Felt252, Blake2s256Hasher<Felt252>>(&input, root_exp, &to_verify);
 
         let input = [
@@ -1098,7 +1100,7 @@ mod tests {
         ];
         let root_exp =
             hex_to_vec("b7a3cd28384b4baea480d070801106bf07f56f848acf271f6b6415ddc355f8e9");
-        let to_verify = [
+        let to_verify = BTreeMap::from([
             (
                 0,
                 hex_to_vec("837cd6db8f93d5ddfeaaba5509551c69c760c099e97969cfa04047ae65c33c8c"),
@@ -1123,7 +1125,7 @@ mod tests {
                 14,
                 hex_to_vec("53ebf1e5f6477b7f0d7a9b631d5ed97f0a14ca54c61173bb50ae98b8d7d81440"),
             ),
-        ];
+        ]);
         test_verify_false::<Felt252, Blake2s256Hasher<Felt252>>(&input, root_exp, &to_verify);
 
         // tests using Keccak256
@@ -1132,10 +1134,10 @@ mod tests {
         )];
         let root_exp =
             hex_to_vec("ed5f0c2a7fdf07022be01ec165a50601807910d9dcc0ce3def6d291e9675e127");
-        let to_verify = [(
+        let to_verify = BTreeMap::from([(
             0,
             hex_to_vec("8b471e237284b2a8d0845469431ecc163264d4924c984987a4dac5c40e2c34f2"),
-        )];
+        )]);
         test_verify_false::<Felt252, Keccak256Hasher<Felt252>>(&input, root_exp, &to_verify);
 
         let input = [
@@ -1144,10 +1146,10 @@ mod tests {
         ];
         let root_exp =
             hex_to_vec("f272f3ba749e68b9ccd51f322c6ae6cac8734967ecc31c1058b8f9a8c99fb083");
-        let to_verify = [(
+        let to_verify = BTreeMap::from([(
             1,
             hex_to_vec("8b471e237284b2a8d0845469431ecc163264d4924c984987a4dac5c40e2c34f2"),
-        )];
+        )]);
         test_verify_false::<Felt252, Keccak256Hasher<Felt252>>(&input, root_exp, &to_verify);
 
         let input = [
@@ -1158,7 +1160,7 @@ mod tests {
         ];
         let root_exp =
             hex_to_vec("24562159dd8260d379ae390b80cb8266da3f4469bc6643db3b5c3f760c126b83");
-        let to_verify = [
+        let to_verify = BTreeMap::from([
             (
                 1,
                 hex_to_vec("15014fef710a715ea5a879a328912d8e1feefbc23137e8bf223139285fd9203e"),
@@ -1167,7 +1169,7 @@ mod tests {
                 3,
                 hex_to_vec("2483654ae6756dc99e99173802f5737cf44d23ffa8b8fae732160c14db636793"),
             ),
-        ];
+        ]);
         test_verify_false::<Felt252, Keccak256Hasher<Felt252>>(&input, root_exp, &to_verify);
 
         let input = [
@@ -1182,7 +1184,7 @@ mod tests {
         ];
         let root_exp =
             hex_to_vec("50a1b9b02edd048756030d39f12e795ab7885565964dde0de6e5de1655f0d793");
-        let to_verify = [
+        let to_verify = BTreeMap::from([
             (
                 0,
                 hex_to_vec("fdc012059327bae5b7796e255b251a5eefcc4310f8438bb738c12964f0630da1"),
@@ -1199,7 +1201,7 @@ mod tests {
                 7,
                 hex_to_vec("2fe79a0be4d26e69164bdd96404780e8e504c5e96eb975975236579c8b569a95"),
             ),
-        ];
+        ]);
         test_verify_false::<Felt252, Keccak256Hasher<Felt252>>(&input, root_exp, &to_verify);
 
         let input = [
@@ -1222,7 +1224,7 @@ mod tests {
         ];
         let root_exp =
             hex_to_vec("fba6d37293ad9845ff546e9615853594c47237ee666cf5267788e14e0032f3de");
-        let to_verify = [
+        let to_verify = BTreeMap::from([
             (
                 4,
                 hex_to_vec("e4ef3f3ea1ae8c961aa6ef36cfdd91831aaa2c92d832aee4687a46144ebbef83"),
@@ -1235,7 +1237,7 @@ mod tests {
                 13,
                 hex_to_vec("614a71ae7c9c127e71884f6bc64454842977b58be4dfcd3a2db8763bba5e8ae5"),
             ),
-        ];
+        ]);
         test_verify_false::<Felt252, Keccak256Hasher<Felt252>>(&input, root_exp, &to_verify);
 
         // tests using Poseidon3
@@ -1243,10 +1245,10 @@ mod tests {
             "c89ae25f3fa9f809dc7e255509bbe13d8ee41e7050a1757d10b14380479762",
         )];
         let root_exp = hex_to_vec("c89ae25f3fa9f809dc7e255509bbe13d8ee41e7050a1757d10b14380479762");
-        let to_verify = [(
+        let to_verify = BTreeMap::from([(
             0,
             hex_to_vec("061e4f02a5fb16a37cef579d5a3bc31ab6bc3dfb112d0bbe440afcf4ef6b2dbd"),
-        )];
+        )]);
         test_verify_false::<Felt252, Poseidon3<Felt252>>(&input, root_exp, &to_verify);
 
         let input = [
@@ -1255,10 +1257,10 @@ mod tests {
         ];
         let root_exp =
             hex_to_vec("07572153d1bc66733cf79b40c1427cdf8c5754e71254491da93c3a789c5f1af3");
-        let to_verify = [(
+        let to_verify = BTreeMap::from([(
             1,
             hex_to_vec("0070336f8988bd453e936b157afcfcf07fa2924e5d670f36fcc9cf01ff09fc6f"),
-        )];
+        )]);
         test_verify_false::<Felt252, Poseidon3<Felt252>>(&input, root_exp, &to_verify);
 
         let input = [
@@ -1269,10 +1271,10 @@ mod tests {
         ];
         let root_exp =
             hex_to_vec("32cbc8162b4c5f91efd2a5f2c2701fbabafdd08ea8ce7f06d6f0ee2a28cdef5");
-        let to_verify = [(
+        let to_verify = BTreeMap::from([(
             2,
             hex_to_vec("1f8c6141be9707ec0a767257d522ef2bf321a2e9efc6b93136e3dc9d9665d26"),
-        )];
+        )]);
         test_verify_false::<Felt252, Poseidon3<Felt252>>(&input, root_exp, &to_verify);
 
         let input = [
@@ -1287,7 +1289,7 @@ mod tests {
         ];
         let root_exp =
             hex_to_vec("577c0d4d52b1b4b583e4f6be73ed16b33067318b0d9eda930c47f60679fe5c0");
-        let to_verify = [
+        let to_verify = BTreeMap::from([
             (
                 0,
                 hex_to_vec("726cb96d8303497a472d118b54046e2966076ad68b3c39a24cd96a8c5ae466b"),
@@ -1316,7 +1318,7 @@ mod tests {
                 6,
                 hex_to_vec("355834fe0fb7afcbd719967841a691822148ff959c16e5ba67114a9774c57e5"),
             ),
-        ];
+        ]);
         test_verify_false::<Felt252, Poseidon3<Felt252>>(&input, root_exp, &to_verify);
     }
 }

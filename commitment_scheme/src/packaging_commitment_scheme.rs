@@ -8,7 +8,9 @@ use channel::ProverChannel;
 use channel::VerifierChannel;
 use randomness::Prng;
 use sha3::Digest;
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
 
 // These closures are given as an input parameter to packaging commitment scheme prover and verifier
 // (correspondingly) to enable creation of inner_commitment_scheme after creating the packer.
@@ -26,7 +28,7 @@ pub struct PackagingCommitmentSchemeProver<F: PrimeField, H: Hasher<F>, P: Prng,
     packer: PackerHasher<F, H>,
     inner_commitment_scheme: Box<dyn CommitmentSchemeProver>,
     is_merkle_layer: bool,
-    queries: Vec<usize>,
+    queries: BTreeSet<usize>,
     missing_element_queries: Vec<usize>,
     n_missing_elements_for_inner_layer: usize,
 }
@@ -58,7 +60,7 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
             packer,
             inner_commitment_scheme,
             is_merkle_layer,
-            queries: vec![],
+            queries: BTreeSet::new(),
             missing_element_queries: vec![],
             n_missing_elements_for_inner_layer: 0,
         }
@@ -131,13 +133,13 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> Commitme
         self.inner_commitment_scheme.commit()
     }
 
-    fn start_decommitment_phase(&mut self, queries: Vec<usize>) -> Vec<usize> {
+    fn start_decommitment_phase(&mut self, queries: BTreeSet<usize>) -> Vec<usize> {
         self.queries = queries;
         self.missing_element_queries = self
             .packer
             .elements_required_to_compute_hashes(&self.queries);
 
-        let package_queries_to_inner_layer: Vec<usize> = self
+        let package_queries_to_inner_layer: BTreeSet<usize> = self
             .queries
             .iter()
             .map(|&q| q / self.packer.n_elements_in_package)
@@ -192,13 +194,17 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> Commitme
 
         self.inner_commitment_scheme.decommit(&data_for_inner_layer);
     }
+
+    fn get_proof(&self) -> Vec<u8> {
+        self.channel.get_proof()
+    }
 }
 
 /// Verifier of Packaging Commitment Scheme.
 pub struct PackagingCommitmentSchemeVerifier<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> {
     size_of_element: usize,
     n_elements: usize,
-    channel: FSVerifierChannel<F, P, W>,
+    channel: Rc<RefCell<FSVerifierChannel<F, P, W>>>,
     packer: PackerHasher<F, H>,
     inner_commitment_scheme: Box<dyn CommitmentSchemeVerifier>,
     is_merkle_layer: bool,
@@ -224,12 +230,38 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
     pub fn new(
         size_of_element: usize,
         n_elements: usize,
-        channel: FSVerifierChannel<F, P, W>,
+        channel: Rc<RefCell<FSVerifierChannel<F, P, W>>>,
         inner_commitment_scheme_factory: PackagingCommitmentSchemeVerifierFactory,
         is_merkle_layer: bool,
     ) -> Self {
         let packer = PackerHasher::new(size_of_element, n_elements);
         let inner_commitment_scheme = inner_commitment_scheme_factory(packer.n_packages);
+
+        if is_merkle_layer {
+            assert_eq!(packer.n_elements_in_package, 2);
+        }
+
+        Self {
+            size_of_element,
+            n_elements,
+            channel,
+            packer,
+            inner_commitment_scheme,
+            is_merkle_layer,
+        }
+    }
+
+    pub fn new_test(
+        size_of_element: usize,
+        n_elements: usize,
+        channel: Rc<RefCell<FSVerifierChannel<F, P, W>>>,
+        // inner_commitment_scheme_factory: PackagingCommitmentSchemeVerifierFactory,
+        is_merkle_layer: bool,
+        packer: PackerHasher<F, H>,
+        inner_commitment_scheme: Box<dyn CommitmentSchemeVerifier>,
+    ) -> Self {
+        // let packer = PackerHasher::new(size_of_element, n_elements);
+        // let inner_commitment_scheme = inner_commitment_scheme_factory(packer.n_packages);
 
         if is_merkle_layer {
             assert_eq!(packer.n_elements_in_package, 2);
@@ -261,7 +293,7 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
     pub fn new_with_existing(
         size_of_element: usize,
         n_elements: usize,
-        channel: FSVerifierChannel<F, P, W>,
+        channel: Rc<RefCell<FSVerifierChannel<F, P, W>>>,
         inner_commitment_scheme: Box<dyn CommitmentSchemeVerifier>,
     ) -> Self {
         let commitment_scheme = Self::new(
@@ -272,7 +304,10 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
             true,
         );
 
-        assert_eq!(2 * commitment_scheme.num_of_elements(), n_elements);
+        assert_eq!(
+            2 * commitment_scheme.inner_commitment_scheme.num_of_elements(),
+            n_elements
+        );
 
         commitment_scheme
     }
@@ -298,21 +333,21 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> Commitme
         self.inner_commitment_scheme.read_commitment()
     }
 
-    fn verify_integrity(&mut self, elements_to_verify: &[(usize, Vec<u8>)]) -> Option<bool> {
+    fn verify_integrity(&mut self, elements_to_verify: BTreeMap<usize, Vec<u8>>) -> Option<bool> {
         // Get missing elements required to compute hashes
-        let elements_to_verify: HashMap<usize, Vec<u8>> =
-            elements_to_verify.iter().cloned().collect();
-        let keys: Vec<usize> = elements_to_verify.keys().copied().collect();
+        let keys: BTreeSet<usize> = elements_to_verify.keys().copied().collect();
         let missing_elements_idxs = self.packer.elements_required_to_compute_hashes(&keys);
 
         let mut full_data_to_verify = elements_to_verify.clone();
 
         for &missing_element_idx in &missing_elements_idxs {
             if self.is_merkle_layer {
-                let result_array = self.channel.recv_decommit_node(H::DIGEST_NUM_BYTES).ok()?;
+                let mut channel = self.channel.borrow_mut();
+                let result_array = channel.recv_decommit_node(H::DIGEST_NUM_BYTES).ok()?;
                 full_data_to_verify.insert(missing_element_idx, result_array.to_vec());
             } else {
-                let data = self.channel.recv_data(self.size_of_element).ok()?;
+                let mut channel = self.channel.borrow_mut();
+                let data = channel.recv_data(self.size_of_element).ok()?;
                 full_data_to_verify.insert(missing_element_idx, data);
             }
         }
@@ -323,6 +358,235 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> Commitme
             .pack_and_hash(&full_data_to_verify, self.is_merkle_layer);
 
         self.inner_commitment_scheme
-            .verify_integrity(&bytes_to_verify)
+            .verify_integrity(bytes_to_verify)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use crate::{make_commitment_scheme_verifier, CommitmentHashes};
+    use felt::Felt252;
+    use randomness::keccak256::PrngKeccak256;
+    use sha3::Sha3_256;
+
+    fn test_packaging_verifier_completeness_with(
+        size_of_element: usize,
+        n_elements: usize,
+        n_verifier_friendly_commitment_layers: usize,
+        proof: Vec<u8>,
+        elements_to_verify: BTreeMap<usize, Vec<u8>>,
+        commitment_hashes: CommitmentHashes,
+    ) {
+        let channel_prng = PrngKeccak256::new();
+        let verifier_channel: Rc<RefCell<FSVerifierChannel<Felt252, PrngKeccak256, Sha3_256>>> =
+            Rc::new(RefCell::new(FSVerifierChannel::new(channel_prng, proof)));
+        let mut verifier = make_commitment_scheme_verifier(
+            size_of_element,
+            n_elements,
+            verifier_channel,
+            n_verifier_friendly_commitment_layers,
+            commitment_hashes,
+            1,
+        );
+
+        let _ = verifier.read_commitment();
+
+        assert!(verifier.verify_integrity(elements_to_verify).unwrap());
+    }
+
+    #[test]
+    fn test_packaging_completeness() {
+        let size_of_element = 1;
+        let n_elements = 1;
+        let _n_segments = 1;
+        let n_verifier_friendly_commitment_layers = 0;
+        let _data = vec![218];
+        let _queries = vec![0];
+        let exp_proof = vec![
+            144, 179, 218, 100, 7, 139, 77, 94, 125, 120, 142, 246, 58, 51, 233, 222, 113, 197,
+            164, 233, 90, 95, 203, 225, 80, 92, 226, 11, 38, 65, 75, 186,
+        ];
+        let elements_to_verify = BTreeMap::from([(0, vec![218])]);
+        let commitment_hashes = CommitmentHashes::from_single_hash("keccak256".to_string());
+        test_packaging_verifier_completeness_with(
+            size_of_element,
+            n_elements,
+            n_verifier_friendly_commitment_layers,
+            exp_proof,
+            elements_to_verify,
+            commitment_hashes,
+        );
+
+        let size_of_element = 32;
+        let n_elements = 4;
+        let _n_segments = 2;
+        let n_verifier_friendly_commitment_layers = 0;
+        let _data: Vec<u8> = vec![
+            1, 35, 100, 184, 107, 167, 27, 153, 178, 178, 4, 16, 193, 139, 130, 53, 171, 152, 226,
+            105, 245, 241, 72, 163, 50, 42, 211, 163, 168, 41, 209, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let _queries: Vec<usize> = vec![2, 3];
+        let exp_proof: Vec<u8> = vec![
+            30, 203, 180, 40, 198, 195, 135, 138, 82, 181, 102, 57, 157, 204, 229, 11, 171, 220,
+            225, 49, 123, 125, 106, 107, 26, 60, 209, 112, 118, 253, 69, 144, 188, 211, 231, 5,
+            196, 97, 64, 1, 86, 176, 99, 66, 246, 247, 210, 53, 232, 192, 90, 107, 229, 91, 72, 22,
+            240, 95, 210, 204, 8, 248, 196, 107,
+        ];
+        let elements_to_verify = BTreeMap::from([
+            (
+                2,
+                vec![
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0,
+                ],
+            ),
+            (
+                3,
+                vec![
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0,
+                ],
+            ),
+        ]);
+        let commitment_hashes = CommitmentHashes::from_single_hash("keccak256".to_string());
+        test_packaging_verifier_completeness_with(
+            size_of_element,
+            n_elements,
+            n_verifier_friendly_commitment_layers,
+            exp_proof,
+            elements_to_verify,
+            commitment_hashes,
+        );
+
+        let size_of_element = 9;
+        let n_elements = 8;
+        let _n_segments = 1;
+        let n_verifier_friendly_commitment_layers = 0;
+        let _data: Vec<u8> = vec![
+            4, 90, 97, 132, 3, 36, 87, 219, 51, 182, 28, 167, 37, 233, 113, 129, 120, 66, 148, 157,
+            113, 212, 10, 142, 81, 151, 47, 212, 110, 9, 191, 172, 184, 18, 38, 85, 28, 20, 113,
+            33, 169, 7, 62, 125, 232, 129, 32, 248, 19, 171, 203, 4, 98, 161, 174, 222, 239, 94,
+            124, 218, 67, 84, 16, 249, 51, 75, 2, 29, 214, 172, 247, 141,
+        ];
+        let _queries: Vec<usize> = vec![0, 1, 2, 3, 4, 7];
+        let exp_proof: Vec<u8> = vec![
+            227, 216, 27, 24, 119, 173, 119, 23, 6, 143, 172, 94, 211, 230, 252, 178, 181, 162,
+            103, 224, 82, 199, 136, 76, 191, 61, 234, 103, 168, 121, 179, 118, 129, 32, 248, 19,
+            171, 203, 4, 98, 161, 174, 222, 239, 94, 124, 218, 67, 84, 16,
+        ];
+        let elements_to_verify: BTreeMap<usize, Vec<u8>> = BTreeMap::from([
+            (0, vec![4, 90, 97, 132, 3, 36, 87, 219, 51]),
+            (1, vec![182, 28, 167, 37, 233, 113, 129, 120, 66]),
+            (2, vec![148, 157, 113, 212, 10, 142, 81, 151, 47]),
+            (3, vec![212, 110, 9, 191, 172, 184, 18, 38, 85]),
+            (4, vec![28, 20, 113, 33, 169, 7, 62, 125, 232]),
+            (7, vec![249, 51, 75, 2, 29, 214, 172, 247, 141]),
+        ]);
+        let commitment_hashes = CommitmentHashes::from_single_hash("keccak256".to_string());
+        test_packaging_verifier_completeness_with(
+            size_of_element,
+            n_elements,
+            n_verifier_friendly_commitment_layers,
+            exp_proof,
+            elements_to_verify,
+            commitment_hashes,
+        );
+
+        let size_of_element = 32;
+        let n_elements = 4;
+        let _n_segments = 1;
+        let n_verifier_friendly_commitment_layers = 0;
+        let _data: Vec<u8> = vec![
+            0, 244, 180, 10, 155, 113, 242, 248, 48, 242, 218, 212, 163, 250, 94, 65, 248, 34, 62,
+            45, 135, 203, 137, 51, 226, 102, 52, 31, 183, 44, 63, 77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let _queries: Vec<usize> = vec![0, 1, 2, 3];
+        let exp_proof: Vec<u8> = vec![
+            226, 176, 114, 29, 157, 171, 34, 248, 182, 241, 254, 5, 43, 225, 0, 170, 122, 203, 186,
+            188, 169, 218, 71, 145, 121, 80, 14, 246, 189, 160, 236, 130,
+        ];
+        let elements_to_verify = BTreeMap::from([
+            (
+                0,
+                vec![
+                    0, 244, 180, 10, 155, 113, 242, 248, 48, 242, 218, 212, 163, 250, 94, 65, 248,
+                    34, 62, 45, 135, 203, 137, 51, 226, 102, 52, 31, 183, 44, 63, 77,
+                ],
+            ),
+            (
+                1,
+                vec![
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0,
+                ],
+            ),
+            (
+                2,
+                vec![
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0,
+                ],
+            ),
+            (
+                3,
+                vec![
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0,
+                ],
+            ),
+        ]);
+        let commitment_hashes = CommitmentHashes::from_single_hash("keccak256".to_string());
+        test_packaging_verifier_completeness_with(
+            size_of_element,
+            n_elements,
+            n_verifier_friendly_commitment_layers,
+            exp_proof,
+            elements_to_verify,
+            commitment_hashes,
+        );
+
+        let size_of_element = 32;
+        let n_elements = 4;
+        let _n_segments = 2;
+        let n_verifier_friendly_commitment_layers = 0;
+        let _data: Vec<u8> = vec![
+            0, 69, 9, 83, 116, 186, 114, 166, 162, 161, 5, 164, 38, 245, 112, 70, 202, 33, 63, 186,
+            85, 163, 0, 139, 112, 108, 14, 98, 197, 219, 225, 74, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let _queries: Vec<usize> = vec![0];
+        let exp_proof: Vec<u8> = vec![
+            146, 94, 184, 144, 65, 226, 66, 73, 78, 28, 77, 148, 37, 124, 200, 171, 209, 97, 100,
+            196, 17, 231, 9, 39, 122, 53, 63, 43, 193, 194, 119, 162, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 173, 50, 40, 182,
+            118, 247, 211, 205, 66, 132, 165, 68, 63, 23, 241, 150, 43, 54, 228, 145, 179, 10, 64,
+            178, 64, 88, 73, 229, 151, 186, 95, 181,
+        ];
+        let elements_to_verify = BTreeMap::from([(
+            0,
+            vec![
+                0, 69, 9, 83, 116, 186, 114, 166, 162, 161, 5, 164, 38, 245, 112, 70, 202, 33, 63,
+                186, 85, 163, 0, 139, 112, 108, 14, 98, 197, 219, 225, 74,
+            ],
+        )]);
+        let commitment_hashes = CommitmentHashes::from_single_hash("keccak256".to_string());
+        test_packaging_verifier_completeness_with(
+            size_of_element,
+            n_elements,
+            n_verifier_friendly_commitment_layers,
+            exp_proof,
+            elements_to_verify,
+            commitment_hashes,
+        );
     }
 }

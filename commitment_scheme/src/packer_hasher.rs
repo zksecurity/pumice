@@ -1,13 +1,12 @@
-use ark_ff::PrimeField;
-
 use crate::merkle::bytes_as_hash;
 use crate::merkle::hash::Hasher;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use ark_ff::PrimeField;
+use std::collections::{BTreeMap, BTreeSet};
 use std::marker::PhantomData;
 
 /// PackerHasher group elements together into packages, approximately the size of the hash (or larger),
 /// and use these as the basic element for the tree.
+#[derive(Debug)]
 pub struct PackerHasher<F: PrimeField, H: Hasher<F>> {
     pub size_of_element: usize,
     pub n_elements_in_package: usize,
@@ -50,7 +49,7 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>> PackerHasher<F, H> {
         }
     }
 
-    /// Groups together elements into packages and returns the sequence of hashes (one has per package).
+    /// Groups together elements into packages and returns the hashes as sequence of bytes.
     ///
     /// # Arguments
     ///
@@ -59,7 +58,7 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>> PackerHasher<F, H> {
     ///
     /// # Returns
     ///
-    /// Returns sequence of hashes (one has per package)
+    /// Returns the hashes as sequence of bytes.
     pub fn pack_and_hash_internal(&self, data: &[u8], is_merkle_layer: bool) -> Vec<u8> {
         if data.is_empty() {
             return vec![];
@@ -92,7 +91,7 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>> PackerHasher<F, H> {
     /// # Returns
     ///
     /// Returns a vector of the indices of all elements in that package
-    pub fn get_elements_in_packages(&self, packages: &[usize]) -> Vec<usize> {
+    pub fn get_elements_in_packages(&self, packages: &Vec<usize>) -> Vec<usize> {
         let mut elements_needed = Vec::with_capacity(packages.len() * self.n_elements_in_package);
         for &package in packages {
             let range =
@@ -112,8 +111,11 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>> PackerHasher<F, H> {
     /// # Returns
     ///
     /// Returns indices of elements that belong to packages but are not known.
-    pub fn elements_required_to_compute_hashes(&self, elements_known: &Vec<usize>) -> Vec<usize> {
-        let mut packages = Vec::new();
+    pub fn elements_required_to_compute_hashes(
+        &self,
+        elements_known: &BTreeSet<usize>,
+    ) -> Vec<usize> {
+        let mut packages = BTreeSet::new();
 
         // Get package indices of known_elements.
         for &el in elements_known {
@@ -124,27 +126,28 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>> PackerHasher<F, H> {
                 self.n_packages,
                 package_id
             );
-            packages.push(package_id);
+            packages.insert(package_id);
         }
 
         // Return only elements that belong to packages but are not known.
-        let all_packages_elements = self.get_elements_in_packages(&packages);
+        let packages_vec: Vec<usize> = packages.iter().cloned().collect();
+        let all_packages_elements = self.get_elements_in_packages(&packages_vec);
 
         // Perform set difference to filter out known elements
-        let set1: HashSet<usize> = all_packages_elements.into_iter().collect();
-        let set2: HashSet<usize> = elements_known.iter().cloned().collect();
-        let difference: HashSet<usize> = set1.difference(&set2).cloned().collect();
+        let set1: BTreeSet<usize> = all_packages_elements.into_iter().collect();
+        let set2: BTreeSet<usize> = elements_known.iter().cloned().collect();
+        let difference: BTreeSet<usize> = set1.difference(&set2).cloned().collect();
         let required_elements: Vec<usize> = difference.into_iter().collect();
 
         required_elements
     }
 
-    /// Given numbered elements, groups them into packages, and returns a vec of [(idx, bytes)]
+    /// Given numbered elements, groups them into packages, and returns a BTreeMap of [(idx, bytes)]
     /// where the first element is the package's index, and the second element is the packages's hash bytes.
     ///
     /// # Arguments
     ///
-    /// - `elements`: numbered elements represented as HashMap [(idx, bytes)]
+    /// - `elements`: numbered elements represented as BTreeMap [(idx, bytes)]
     /// - `is_merkle_layer`: flag to indicate Merkle layer.
     ///
     /// # Returns
@@ -152,18 +155,18 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>> PackerHasher<F, H> {
     /// Returns a map with key as package index and value as package hash bytes.
     pub fn pack_and_hash(
         &self,
-        elements: &HashMap<usize, Vec<u8>>,
+        elements: &BTreeMap<usize, Vec<u8>>,
         is_merkle_layer: bool,
-    ) -> Vec<(usize, Vec<u8>)> {
-        let mut packages = Vec::new();
+    ) -> BTreeMap<usize, Vec<u8>> {
+        let mut packages = BTreeSet::new();
 
         // Deduce required packages.
         for key in elements.keys() {
-            packages.push(key / self.n_elements_in_package);
+            packages.insert(key / self.n_elements_in_package);
         }
 
         // Hash packages and return the results as a map of element indices with their hash values.
-        let mut hashed_packages = Vec::new();
+        let mut hashed_packages = BTreeMap::new();
         for &package in &packages {
             let first = package * self.n_elements_in_package;
             let last = (package + 1) * self.n_elements_in_package;
@@ -183,7 +186,7 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>> PackerHasher<F, H> {
 
             // Store the results in the returned map.
             let hash_array = self.pack_and_hash_internal(&packed_elements, is_merkle_layer);
-            hashed_packages.push((package, hash_array));
+            hashed_packages.insert(package, hash_array);
         }
 
         hashed_packages

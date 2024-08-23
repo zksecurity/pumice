@@ -3,8 +3,14 @@ pub mod packaging_commitment_scheme;
 pub mod packer_hasher;
 pub mod table_utils;
 // pub mod table_verifier;
+use std::rc::Rc;
 use std::vec::Vec;
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, BTreeSet},
+};
 
+use crate::packer_hasher::PackerHasher;
 use ark_ff::PrimeField;
 use channel::{fs_prover_channel::FSProverChannel, fs_verifier_channel::FSVerifierChannel};
 use merkle::{
@@ -35,10 +41,13 @@ pub trait CommitmentSchemeProver {
     fn commit(&mut self);
 
     // Start the decommitment phase
-    fn start_decommitment_phase(&mut self, queries: Vec<usize>) -> Vec<usize>;
+    fn start_decommitment_phase(&mut self, queries: BTreeSet<usize>) -> Vec<usize>;
 
     // Decommit to data stored in queried locations
     fn decommit(&mut self, elements_data: &[u8]);
+
+    // Returns proof from Prover Channel
+    fn get_proof(&self) -> Vec<u8>;
 }
 
 // Define the CommitmentSchemeVerifier trait
@@ -47,7 +56,7 @@ pub trait CommitmentSchemeVerifier {
     fn read_commitment(&mut self) -> Result<(), anyhow::Error>;
 
     // Verify the integrity of the data
-    fn verify_integrity(&mut self, elements_to_verify: &[(usize, Vec<u8>)]) -> Option<bool>;
+    fn verify_integrity(&mut self, elements_to_verify: BTreeMap<usize, Vec<u8>>) -> Option<bool>;
 
     // Return the total number of elements in the current layer
     fn num_of_elements(&self) -> usize;
@@ -302,7 +311,7 @@ where
 /// Returns the outermost commitmnet layer.
 pub fn create_commitment_scheme_verifier_layers<F, P, W>(
     n_elements: usize,
-    channel: FSVerifierChannel<F, P, W>,
+    channel: Rc<RefCell<FSVerifierChannel<F, P, W>>>,
     n_verifier_friendly_commitment_layers: usize,
     commitment_hashes: CommitmentHashes,
 ) -> Box<dyn CommitmentSchemeVerifier>
@@ -383,7 +392,7 @@ where
 pub fn make_commitment_scheme_verifier<F, P, W>(
     size_of_element: usize,
     n_elements: usize,
-    channel: FSVerifierChannel<F, P, W>,
+    channel: Rc<RefCell<FSVerifierChannel<F, P, W>>>,
     n_verifier_friendly_commitment_layers: usize,
     commitment_hashes: CommitmentHashes,
     n_columns: usize,
@@ -399,42 +408,59 @@ where
     let hashes = commitment_hashes.clone();
     let hash_name = hashes.get_hash_name(is_verifier_friendly_layer);
 
-    let channel_clone = channel.clone();
-
-    let inner_commitment_scheme_factory = Box::new(move |n_elements_inner_layer: usize| {
-        create_commitment_scheme_verifier_layers(
-            n_elements_inner_layer,
-            channel_clone,
-            n_verifier_friendly_commitment_layers,
-            commitment_hashes.clone(),
-        )
-    });
-
     let commitment_scheme: Box<dyn CommitmentSchemeVerifier> = match hash_name.as_str() {
-        "keccak256" => Box::new(PackagingCommitmentSchemeVerifier::<
-            F,
-            Keccak256Hasher<F>,
-            P,
-            W,
-        >::new(
-            size_of_element,
-            n_elements,
-            channel.clone(),
-            inner_commitment_scheme_factory,
-            false,
-        )),
-        "blake2s256" => Box::new(PackagingCommitmentSchemeVerifier::<
-            F,
-            Blake2s256Hasher<F>,
-            P,
-            W,
-        >::new(
-            size_of_element,
-            n_elements,
-            channel.clone(),
-            inner_commitment_scheme_factory,
-            false,
-        )),
+        "keccak256" => {
+            let packer: PackerHasher<F, Keccak256Hasher<F>> =
+                PackerHasher::new(size_of_element, n_elements);
+
+            let inner_commitment_scheme = create_commitment_scheme_verifier_layers(
+                packer.n_packages,
+                channel.clone(),
+                n_verifier_friendly_commitment_layers,
+                commitment_hashes.clone(),
+            );
+
+            Box::new(PackagingCommitmentSchemeVerifier::<
+                F,
+                Keccak256Hasher<F>,
+                P,
+                W,
+            >::new_test(
+                size_of_element,
+                n_elements,
+                channel.clone(),
+                false,
+                packer,
+                inner_commitment_scheme,
+            ))
+        }
+
+        "blake2s256" => {
+            let packer: PackerHasher<F, Blake2s256Hasher<F>> =
+                PackerHasher::new(size_of_element, n_elements);
+
+            let inner_commitment_scheme = create_commitment_scheme_verifier_layers(
+                packer.n_packages,
+                channel.clone(),
+                n_verifier_friendly_commitment_layers,
+                commitment_hashes.clone(),
+            );
+
+            Box::new(PackagingCommitmentSchemeVerifier::<
+                F,
+                Blake2s256Hasher<F>,
+                P,
+                W,
+            >::new_test(
+                size_of_element,
+                n_elements,
+                channel.clone(),
+                false,
+                packer,
+                inner_commitment_scheme,
+            ))
+        }
+
         &_ => todo!(),
     };
 
@@ -467,7 +493,7 @@ mod tests {
         ) -> Self::Prover;
 
         fn create_verifier(
-            verifier_channel: FSVerifierChannel<F, P, W>,
+            verifier_channel: Rc<RefCell<FSVerifierChannel<F, P, W>>>,
             size_of_element: usize,
             n_elements: usize,
             n_verifier_friendly_commitment_layers: usize,
@@ -507,7 +533,7 @@ mod tests {
 
         // CreateVerifier function
         fn create_verifier(
-            verifier_channel: FSVerifierChannel<F, P, W>,
+            verifier_channel: Rc<RefCell<FSVerifierChannel<F, P, W>>>,
             _size_of_element: usize,
             n_elements: usize,
             _n_verifier_friendly_commitment_layers: usize,
@@ -532,7 +558,7 @@ mod tests {
         n_elements: usize,
         n_segments: usize,
         data: Vec<u8>,
-        queries: Vec<usize>,
+        queries: BTreeSet<usize>,
         n_verifier_friendly_commitment_layers: usize,
         _marker: std::marker::PhantomData<(F, P, W, T)>,
     }
@@ -546,7 +572,7 @@ mod tests {
             n_elements: usize,
             n_segments: usize,
             data: Vec<u8>,
-            queries: Vec<usize>,
+            queries: BTreeSet<usize>,
             n_verifier_friendly_commitment_layers: usize,
         ) -> Self {
             let size_of_element = T::Hash::DIGEST_NUM_BYTES;
@@ -566,8 +592,14 @@ mod tests {
             FSProverChannel::new(self.channel_prng.clone())
         }
 
-        pub fn get_verifier_channel(&self, proof: &[u8]) -> FSVerifierChannel<F, P, W> {
-            FSVerifierChannel::new(self.channel_prng.clone(), proof.to_vec())
+        pub fn get_verifier_channel(
+            &self,
+            proof: &[u8],
+        ) -> Rc<RefCell<FSVerifierChannel<F, P, W>>> {
+            Rc::new(RefCell::new(FSVerifierChannel::new(
+                self.channel_prng.clone(),
+                proof.to_vec(),
+            )))
         }
 
         fn get_num_segments(&self) -> usize {
@@ -631,7 +663,7 @@ mod tests {
         pub fn verify_proof(
             &self,
             proof: &[u8],
-            elements_to_verify: &[(usize, std::vec::Vec<u8>)],
+            elements_to_verify: BTreeMap<usize, Vec<u8>>,
         ) -> bool {
             let verifier_channel = self.get_verifier_channel(proof);
             let mut verifier = T::create_verifier(
