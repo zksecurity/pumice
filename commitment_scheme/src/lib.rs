@@ -10,6 +10,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
 };
 
+use crate::merkle::hash::MaskedHash;
 use crate::packer_hasher::PackerHasher;
 use ark_ff::PrimeField;
 use channel::{fs_prover_channel::FSProverChannel, fs_verifier_channel::FSVerifierChannel};
@@ -337,6 +338,25 @@ where
                 ),
             )
         }
+
+        "keccak256_masked160_msb" => {
+            next_inner_layer = Box::new(MerkleCommitmentSchemeVerifier::<
+                F,
+                MaskedHash<F, Keccak256Hasher<F>, 20, true>,
+                P,
+                W,
+            >::new(cur_n_elements_in_layer, channel.clone()))
+        }
+
+        "blake2s256_masked160_msb" => {
+            next_inner_layer = Box::new(MerkleCommitmentSchemeVerifier::<
+                F,
+                MaskedHash<F, Blake2s256Hasher<F>, 20, true>,
+                P,
+                W,
+            >::new(cur_n_elements_in_layer, channel.clone()))
+        }
+
         "blake2s256" => {
             next_inner_layer = Box::new(MerkleCommitmentSchemeVerifier::<
                 F,
@@ -369,6 +389,35 @@ where
                     next_inner_layer,
                 ))
             }
+
+            "keccak256_masked160_msb" => {
+                next_inner_layer = Box::new(PackagingCommitmentSchemeVerifier::<
+                    F,
+                    MaskedHash<F, Keccak256Hasher<F>, 20, true>,
+                    P,
+                    W,
+                >::new_with_existing(
+                    32,
+                    cur_n_elements_in_layer,
+                    channel.clone(),
+                    next_inner_layer,
+                ))
+            }
+
+            "blake2s256_masked160_msb" => {
+                next_inner_layer = Box::new(PackagingCommitmentSchemeVerifier::<
+                    F,
+                    MaskedHash<F, Blake2s256Hasher<F>, 20, true>,
+                    P,
+                    W,
+                >::new_with_existing(
+                    32,
+                    cur_n_elements_in_layer,
+                    channel.clone(),
+                    next_inner_layer,
+                ))
+            }
+
             "blake2s256" => {
                 next_inner_layer = Box::new(PackagingCommitmentSchemeVerifier::<
                     F,
@@ -427,6 +476,58 @@ where
             Box::new(PackagingCommitmentSchemeVerifier::<
                 F,
                 Keccak256Hasher<F>,
+                P,
+                W,
+            >::new_test(
+                size_of_element,
+                n_elements,
+                channel.clone(),
+                false,
+                packer,
+                inner_commitment_scheme,
+            ))
+        }
+
+        "keccak256_masked160_msb" => {
+            let packer: PackerHasher<F, MaskedHash<F, Keccak256Hasher<F>, 20, true>> =
+                PackerHasher::new(size_of_element, n_elements);
+
+            let inner_commitment_scheme = create_commitment_scheme_verifier_layers(
+                packer.n_packages,
+                channel.clone(),
+                n_verifier_friendly_commitment_layers,
+                commitment_hashes.clone(),
+            );
+
+            Box::new(PackagingCommitmentSchemeVerifier::<
+                F,
+                MaskedHash<F, Keccak256Hasher<F>, 20, true>,
+                P,
+                W,
+            >::new_test(
+                size_of_element,
+                n_elements,
+                channel.clone(),
+                false,
+                packer,
+                inner_commitment_scheme,
+            ))
+        }
+
+        "blake2s256_masked160_msb" => {
+            let packer: PackerHasher<F, MaskedHash<F, Blake2s256Hasher<F>, 20, true>> =
+                PackerHasher::new(size_of_element, n_elements);
+
+            let inner_commitment_scheme = create_commitment_scheme_verifier_layers(
+                packer.n_packages,
+                channel.clone(),
+                n_verifier_friendly_commitment_layers,
+                commitment_hashes.clone(),
+            );
+
+            Box::new(PackagingCommitmentSchemeVerifier::<
+                F,
+                MaskedHash<F, Blake2s256Hasher<F>, 20, true>,
                 P,
                 W,
             >::new_test(

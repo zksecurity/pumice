@@ -23,6 +23,7 @@ pub trait Hasher<F: PrimeField> {
     fn hash_bytes(data: &[u8]) -> Self::Output;
 }
 
+#[derive(Debug)]
 pub struct Blake2s256Hasher<F: PrimeField> {
     _ph: PhantomData<F>,
 }
