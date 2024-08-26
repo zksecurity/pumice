@@ -145,7 +145,7 @@ impl<F: FftField, V: VerifierChannel<Field = F> + FSChannel<Field = F>> FriVerif
                 self.first_eval_point,
                 &self.params,
                 0,
-                first_layer_queries[i],
+                first_layer_queries[i] as usize,
             );
             self.query_results.push(result);
         }
@@ -157,7 +157,7 @@ impl<F: FftField, V: VerifierChannel<Field = F> + FSChannel<Field = F>> FriVerif
         eval_point: Option<F>,
         params: &FriParameters<F>,
         layer_num: usize,
-        mut first_element_index: u64,
+        mut first_element_index: usize,
     ) -> F {
         let mut curr_eval_point = eval_point;
         let mut cumulative_fri_step = 0;
@@ -174,7 +174,7 @@ impl<F: FftField, V: VerifierChannel<Field = F> + FSChannel<Field = F>> FriVerif
 
         let mut cur_layer = elements.to_vec();
         for basis_index in cumulative_fri_step..(cumulative_fri_step + layer_fri_step) {
-            let curr_eval_point = curr_eval_point.expect("evaluation point doesn't have a value");
+            assert!(curr_eval_point.is_some(), "evaluation point doesn't have a value");
             let basis = params.fft_bases.as_ref().unwrap().at(basis_index);
 
             let mut next_layer = Vec::with_capacity(cur_layer.len() / 2);
@@ -183,24 +183,19 @@ impl<F: FftField, V: VerifierChannel<Field = F> + FSChannel<Field = F>> FriVerif
                     MultiplicativeFriFolder::next_layer_element_from_two_previous_layer_elements(
                         &cur_layer[j],
                         &cur_layer[j + 1],
-                        &curr_eval_point,
-                        &basis.elements(first_element_index + j as u64),
+                        &curr_eval_point.unwrap(),
+                        &basis.elements().nth(first_element_index + j as usize).unwrap(),
                     ),
                 );
             }
 
             cur_layer = next_layer;
-            curr_eval_point = Some(
-                params
-                    .fft_bases
-                    .as_ref()
-                    .unwrap()
-                    .apply_basis_transform(curr_eval_point, basis_index),
-            );
+            // ApplyBasisTransform just calculates square of curr_eval_point
+            curr_eval_point = Some(curr_eval_point.unwrap() * curr_eval_point.unwrap());
             first_element_index /= 2;
         }
 
-        assert_eq!(cur_layer.len(), 1, "예상된 요소의 수는 1입니다.");
+        assert_eq!(cur_layer.len(), 1, "Expected number of elements to be one.");
         cur_layer[0]
     }
 
@@ -224,9 +219,84 @@ impl<F: FftField, V: VerifierChannel<Field = F> + FSChannel<Field = F>> FriVerif
         first_layer_queries
     }
 
-    pub fn verify_inner_layers(&self) {
-        todo!()
+    pub fn verify_inner_layers(&mut self) {
+        let first_fri_step = self.params.fri_step_list[0];
+        let mut basis_index = 0;
+    
+        for i in 0..self.n_layers - 1 {
+            // TODO: AnnotationScope
+            // AnnotationScope scope(self.channel.as_mut(), format!("Layer {}", i + 1));
+    
+            let cur_fri_step = self.params.fri_step_list[i + 1];
+            basis_index += self.params.fri_step_list[i];
+    
+            let (layer_data_queries, layer_integrity_queries) = self.next_layer_data_and_integrity_queries(i + 1);
+    
+            // TODO: TableVerifier
+            // let mut to_verify = self.table_verifiers[i].query(&layer_data_queries, &layer_integrity_queries);
+    
+            let basis = self.params.fft_bases.as_ref().unwrap().at(basis_index);
+            let mut prev_query_index = u64::MAX;
+    
+            // Below codes are for annotation
+
+            // for j in 0..self.query_results.len() {
+            //     let query_index = self.query_indices[j] >> (basis_index - first_fri_step);
+            //     let query_loc = self.get_table_prover_row_col(query_index, cur_fri_step);
+                
+            //     // TODO: insert query_results to to_verify
+            //     // to_verify.insert(query_loc, self.query_results[j]);
+    
+            //     if query_index != prev_query_index && !self.channel.extra_annotations_disabled() {
+            //         prev_query_index = query_index;
+            //         // self.channel.annotate_extra_field_element(&self.query_results[j], self.element_decommit_annotation(&query_loc));
+            //         let x_inv = basis.get_field_element_at(query_index as usize).inverse().unwrap();
+            //         // self.channel.annotate_extra_field_element(&x_inv, format!("xInv for index {}", query_index));
+            //     }
+            // }
+    
+            let eval_point = self.eval_points[i];
+            for j in 0..self.query_results.len() {
+                let coset_size = 1 << cur_fri_step;
+                let mut coset_elements = Vec::with_capacity(coset_size);
+                let coset_start = self.get_table_prover_row(self.query_indices[j] >> (basis_index - first_fri_step), cur_fri_step);
+                
+                for k in 0..coset_size {
+                    // TODO: to_verify
+                    // coset_elements.push(to_verify.get(&(coset_start, k)).unwrap().clone());
+                }
+    
+                self.query_results[j] = self.apply_fri_layers(
+                    &coset_elements,
+                    Some(eval_point),
+                    &self.params,
+                    i + 1,
+                    (coset_start as usize) * (1 << cur_fri_step),
+                );
+            }
+    
+            // TODO: TableVerifier
+            // assert!(self.table_verifiers[i].verify_decommitment(&to_verify), "Layer {} failed decommitment", i);
+        }
+    
     }
+
+    fn next_layer_data_and_integrity_queries(&self, layer: usize) -> (Vec<(u64, u64)>, Vec<(u64, u64)>) {
+        (vec![], vec![])
+    }
+
+    fn get_table_prover_row_col(&self, query_index: u64, fri_step: usize) -> (u64, u64) {
+        (0, 0)
+    }
+
+    fn get_table_prover_row(&self, query_index: u64, fri_step: usize) -> u64 {
+        0
+    }
+
+    fn element_decommit_annotation(&self, query_loc: &(u64, u64)) -> String {
+        String::new()
+    }
+
 
     pub fn verify_last_layer(&self) {
         todo!()

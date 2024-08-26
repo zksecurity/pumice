@@ -1,20 +1,24 @@
 mod folder;
-mod layer;
 mod parameters;
 mod verifier;
 use ark_ff::FftField;
-use ark_poly::domain::GeneralEvaluationDomain;
+use ark_poly::domain::Radix2EvaluationDomain;
 
 struct FftBases<F: FftField> {
-    pub domains: Vec<GeneralEvaluationDomain<F>>,
+    pub domains: Vec<Radix2EvaluationDomain<F>>,
 }
 
 impl<F: FftField> FftBases<F> {
-    fn new(domains: Vec<GeneralEvaluationDomain<F>>) -> Self {
+    pub fn new(domains: Vec<Radix2EvaluationDomain<F>>) -> Self {
         Self { domains }
     }
 
-    fn at(&self, index: usize) -> &GeneralEvaluationDomain<F> {
+    pub fn num_layers(&self) -> usize {
+        // last domain is empty
+        self.domains.len() - 1
+    }
+
+    pub fn at(&self, index: usize) -> &Radix2EvaluationDomain<F> {
         &self.domains[index]
     }
 }
