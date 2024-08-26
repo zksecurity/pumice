@@ -2,7 +2,7 @@ pub mod merkle;
 pub mod packaging_commitment_scheme;
 pub mod packer_hasher;
 pub mod table_utils;
-// pub mod table_verifier;
+pub mod table_verifier;
 use std::rc::Rc;
 use std::vec::Vec;
 use std::{
@@ -156,7 +156,7 @@ where
                 ),
             )
         }
-        &_ => todo!(),
+        &_ => unreachable!(),
     };
 
     let n_layers_in_segment = n_elements_in_segment.ilog2() as usize;
@@ -215,7 +215,7 @@ where
                     next_inner_layer,
                 ))
             }
-            &_ => todo!(),
+            &_ => unreachable!(),
         };
     }
     next_inner_layer
@@ -291,7 +291,7 @@ where
                 false,
             ))
         }
-        &_ => todo!(),
+        &_ => unreachable!(),
     };
 
     commitment_scheme
@@ -320,6 +320,7 @@ where
     F: PrimeField,
     P: Prng + Clone + 'static,
     W: Digest + Clone + 'static,
+    // Poseidon3<F>: Hasher<F, Output = Vec<u8>>,
 {
     let n_layers = n_elements.ilog2() as usize;
     let n_verifier_friendly_layers = std::cmp::min(n_layers, n_verifier_friendly_commitment_layers);
@@ -348,10 +349,28 @@ where
             >::new(cur_n_elements_in_layer, channel.clone()))
         }
 
+        "keccak256_masked160_lsb" => {
+            next_inner_layer = Box::new(MerkleCommitmentSchemeVerifier::<
+                F,
+                MaskedHash<F, Keccak256Hasher<F>, 20, false>,
+                P,
+                W,
+            >::new(cur_n_elements_in_layer, channel.clone()))
+        }
+
         "blake2s256_masked160_msb" => {
             next_inner_layer = Box::new(MerkleCommitmentSchemeVerifier::<
                 F,
                 MaskedHash<F, Blake2s256Hasher<F>, 20, true>,
+                P,
+                W,
+            >::new(cur_n_elements_in_layer, channel.clone()))
+        }
+
+        "blake2s256_masked160_lsb" => {
+            next_inner_layer = Box::new(MerkleCommitmentSchemeVerifier::<
+                F,
+                MaskedHash<F, Blake2s256Hasher<F>, 20, false>,
                 P,
                 W,
             >::new(cur_n_elements_in_layer, channel.clone()))
@@ -365,7 +384,16 @@ where
                 W,
             >::new(cur_n_elements_in_layer, channel.clone()))
         }
-        &_ => todo!(),
+
+        // "poseidon3" => {
+        //     next_inner_layer = Box::new(MerkleCommitmentSchemeVerifier::<
+        //         F,
+        //         Poseidon3<F>,
+        //         P,
+        //         W,
+        //     >::new(cur_n_elements_in_layer, channel.clone()))
+        // }
+        &_ => unreachable!(),
     };
 
     for i in 0..n_layers {
@@ -404,10 +432,38 @@ where
                 ))
             }
 
+            "keccak256_masked160_lsb" => {
+                next_inner_layer = Box::new(PackagingCommitmentSchemeVerifier::<
+                    F,
+                    MaskedHash<F, Keccak256Hasher<F>, 20, false>,
+                    P,
+                    W,
+                >::new_with_existing(
+                    32,
+                    cur_n_elements_in_layer,
+                    channel.clone(),
+                    next_inner_layer,
+                ))
+            }
+
             "blake2s256_masked160_msb" => {
                 next_inner_layer = Box::new(PackagingCommitmentSchemeVerifier::<
                     F,
                     MaskedHash<F, Blake2s256Hasher<F>, 20, true>,
+                    P,
+                    W,
+                >::new_with_existing(
+                    32,
+                    cur_n_elements_in_layer,
+                    channel.clone(),
+                    next_inner_layer,
+                ))
+            }
+
+            "blake2s256_masked160_lsb" => {
+                next_inner_layer = Box::new(PackagingCommitmentSchemeVerifier::<
+                    F,
+                    MaskedHash<F, Blake2s256Hasher<F>, 20, false>,
                     P,
                     W,
                 >::new_with_existing(
@@ -431,7 +487,7 @@ where
                     next_inner_layer,
                 ))
             }
-            &_ => todo!(),
+            &_ => unreachable!(),
         };
     }
 
@@ -514,6 +570,32 @@ where
             ))
         }
 
+        "keccak256_masked160_lsb" => {
+            let packer: PackerHasher<F, MaskedHash<F, Keccak256Hasher<F>, 20, false>> =
+                PackerHasher::new(size_of_element, n_elements);
+
+            let inner_commitment_scheme = create_commitment_scheme_verifier_layers(
+                packer.n_packages,
+                channel.clone(),
+                n_verifier_friendly_commitment_layers,
+                commitment_hashes.clone(),
+            );
+
+            Box::new(PackagingCommitmentSchemeVerifier::<
+                F,
+                MaskedHash<F, Keccak256Hasher<F>, 20, false>,
+                P,
+                W,
+            >::new_test(
+                size_of_element,
+                n_elements,
+                channel.clone(),
+                false,
+                packer,
+                inner_commitment_scheme,
+            ))
+        }
+
         "blake2s256_masked160_msb" => {
             let packer: PackerHasher<F, MaskedHash<F, Blake2s256Hasher<F>, 20, true>> =
                 PackerHasher::new(size_of_element, n_elements);
@@ -528,6 +610,32 @@ where
             Box::new(PackagingCommitmentSchemeVerifier::<
                 F,
                 MaskedHash<F, Blake2s256Hasher<F>, 20, true>,
+                P,
+                W,
+            >::new_test(
+                size_of_element,
+                n_elements,
+                channel.clone(),
+                false,
+                packer,
+                inner_commitment_scheme,
+            ))
+        }
+
+        "blake2s256_masked160_lsb" => {
+            let packer: PackerHasher<F, MaskedHash<F, Blake2s256Hasher<F>, 20, false>> =
+                PackerHasher::new(size_of_element, n_elements);
+
+            let inner_commitment_scheme = create_commitment_scheme_verifier_layers(
+                packer.n_packages,
+                channel.clone(),
+                n_verifier_friendly_commitment_layers,
+                commitment_hashes.clone(),
+            );
+
+            Box::new(PackagingCommitmentSchemeVerifier::<
+                F,
+                MaskedHash<F, Blake2s256Hasher<F>, 20, false>,
                 P,
                 W,
             >::new_test(
@@ -566,7 +674,7 @@ where
             ))
         }
 
-        &_ => todo!(),
+        &_ => unreachable!(),
     };
 
     commitment_scheme

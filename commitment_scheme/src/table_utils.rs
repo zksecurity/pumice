@@ -1,7 +1,8 @@
 use std::cmp::Ordering;
+use std::collections::BTreeSet;
 
 /// Represents a cell in a 2-dimensional array (row and column), with lexicographic comparison.
-#[derive(PartialEq, Eq, Clone, Hash)]
+#[derive(PartialEq, Eq, Clone, Hash, Copy)]
 pub struct RowCol {
     row: usize,
     col: usize,
@@ -37,30 +38,33 @@ impl Ord for RowCol {
     }
 }
 
-pub fn all_query_rows(data_queries: &[RowCol], integrity_queries: &[RowCol]) -> Vec<usize> {
-    let mut all_query_rows = Vec::new();
+pub fn all_query_rows(
+    data_queries: &BTreeSet<RowCol>,
+    integrity_queries: &BTreeSet<RowCol>,
+) -> BTreeSet<usize> {
+    let mut all_query_rows = BTreeSet::new();
     for query in data_queries.iter() {
-        all_query_rows.push(query.get_row());
+        all_query_rows.insert(query.get_row());
     }
     for query in integrity_queries.iter() {
-        all_query_rows.push(query.get_row());
+        all_query_rows.insert(query.get_row());
     }
     all_query_rows
 }
 
 pub fn elements_to_be_transmitted(
     n_columns: usize,
-    all_query_rows: &[usize],
-    integrity_queries: &[RowCol],
-) -> Vec<RowCol> {
-    let mut to_be_transmitted = Vec::new();
+    all_query_rows: &BTreeSet<usize>,
+    integrity_queries: &BTreeSet<RowCol>,
+) -> BTreeSet<RowCol> {
+    let mut to_be_transmitted = BTreeSet::new();
 
     for &row in all_query_rows.iter() {
         for col in 0..n_columns {
             let query_loc = RowCol::new(row, col);
             // Add the location (row, col) only if it is not part of integrity_queries.
             if !integrity_queries.contains(&query_loc) {
-                to_be_transmitted.push(query_loc);
+                to_be_transmitted.insert(query_loc);
             }
         }
     }
