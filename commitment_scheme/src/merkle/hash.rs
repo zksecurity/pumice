@@ -103,13 +103,25 @@ impl<F: PrimeField> Hasher<F> for Keccak256Hasher<F> {
     }
 }
 
-impl Hasher<Felt252> for Poseidon3<Felt252> {
+#[derive(Debug)]
+pub struct Poseidon3Hasher<F: PrimeField> {
+    _ph: PhantomData<F>,
+}
+
+impl<F: PrimeField> Hasher<F> for Poseidon3Hasher<F> {
     const DIGEST_NUM_BYTES: usize = 32;
 
     type Output = Vec<u8>;
 
-    fn leaf(input: &[Felt252]) -> Self::Output {
-        let hash = Poseidon3::hash(input).into_bigint().to_bytes_be();
+    fn leaf(input: &[F]) -> Self::Output {
+        let input_felts: Vec<Felt252> = input
+            .iter()
+            .map(|f| {
+                let bytes = f.into_bigint().to_bytes_be();
+                Felt252::from_be_bytes_mod_order(&bytes)
+            })
+            .collect();
+        let hash = Poseidon3::hash(&input_felts).into_bigint().to_bytes_be();
 
         let mut array = [0u8; 32];
         array[..hash.len()].copy_from_slice(&hash);

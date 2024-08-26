@@ -242,7 +242,6 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
 
     use ark_ff::PrimeField;
-    use poseidon::Poseidon3;
 
     use crate::{
         merkle::hash::{Blake2s256Hasher, Hasher, Keccak256Hasher},
@@ -258,6 +257,8 @@ mod tests {
     use randomness::keccak256::PrngKeccak256;
     use randomness::Prng;
     use sha3::Sha3_256;
+
+    use super::hash::Poseidon3Hasher;
 
     pub fn hex_to_vec(hex_str: &str) -> Vec<u8> {
         let mut hex_str = String::from(hex_str);
@@ -357,7 +358,7 @@ mod tests {
             hex_to_vec("5f7701e493613cfb4e3b0600eccf74d4916cc66aa2631ab374e73d3a43bcee4"),
             hex_to_vec("5e598f5a773a9ab554121b8d4937bf1b383393f10ae49f98532a2beea1f7852"),
         ];
-        test_diff_tree_diff_root::<Felt252, Poseidon3<Felt252>>(&data0, &data1);
+        test_diff_tree_diff_root::<Felt252, Poseidon3Hasher<Felt252>>(&data0, &data1);
     }
 
     fn test_root_diff_depths<F, H>(data0: &[H::Output], data1: &[H::Output], exp_root: H::Output)
@@ -448,7 +449,7 @@ mod tests {
         ];
         let root_exp =
             hex_to_vec("3a80041b3647dd472cb7979dc422e9b7d86d4bcd08b957a6ae05caf6c6e189b");
-        test_root_diff_depths::<Felt252, Poseidon3<Felt252>>(&data0, &data1, root_exp);
+        test_root_diff_depths::<Felt252, Poseidon3Hasher<Felt252>>(&data0, &data1, root_exp);
     }
 
     fn test_compute_root<F, H>(data: &[H::Output], exp_root: H::Output)
@@ -628,7 +629,7 @@ mod tests {
         )];
         let root_exp =
             hex_to_vec("075667f6fe5693fbad372d22f98a6327fde210e05c38cb60a0b18680dbcb36a8");
-        test_compute_root::<Felt252, Poseidon3<Felt252>>(&input, root_exp);
+        test_compute_root::<Felt252, Poseidon3Hasher<Felt252>>(&input, root_exp);
 
         let input = [
             hex_to_vec("26a7232a361ae171948e7fb8e00f012ed8071ba0b8d34afc3108d821d3943a3"),
@@ -636,7 +637,7 @@ mod tests {
         ];
         let root_exp =
             hex_to_vec("3ea667f15f07b1127afe2473679069e19861bacc05df9ac42635e91bf887fa3");
-        test_compute_root::<Felt252, Poseidon3<Felt252>>(&input, root_exp);
+        test_compute_root::<Felt252, Poseidon3Hasher<Felt252>>(&input, root_exp);
 
         let input = [
             hex_to_vec("5d5e6513cb2c66f61bfa1d6a6eb8215c0637ed6cb8be3310a991a271bba195d"),
@@ -645,7 +646,7 @@ mod tests {
             hex_to_vec("dcb000821d941b4aee583805390296f859fa4b3f1d5acfa9bf7de8a561c19"),
         ];
         let root_exp = hex_to_vec("8eacf88fcb82bed025b069d23d41a3b3d7902e6e8279b3e1de42ce43061008");
-        test_compute_root::<Felt252, Poseidon3<Felt252>>(&input, root_exp);
+        test_compute_root::<Felt252, Poseidon3Hasher<Felt252>>(&input, root_exp);
 
         let input = [
             hex_to_vec("36313083bda3d5d1f1ade3dfb59311bd38f583c92f570719cb41be7e46e6ee5"),
@@ -659,7 +660,7 @@ mod tests {
         ];
         let root_exp =
             hex_to_vec("3a80041b3647dd472cb7979dc422e9b7d86d4bcd08b957a6ae05caf6c6e189b");
-        test_compute_root::<Felt252, Poseidon3<Felt252>>(&input, root_exp);
+        test_compute_root::<Felt252, Poseidon3Hasher<Felt252>>(&input, root_exp);
     }
 
     fn test_verify_true<F, H>(data: &[H::Output], root_exp: H::Output)
@@ -862,7 +863,7 @@ mod tests {
         )];
         let root_exp =
             hex_to_vec("075667f6fe5693fbad372d22f98a6327fde210e05c38cb60a0b18680dbcb36a8");
-        test_verify_true::<Felt252, Poseidon3<Felt252>>(&input, root_exp);
+        test_verify_true::<Felt252, Poseidon3Hasher<Felt252>>(&input, root_exp);
 
         let input = [
             hex_to_vec("26a7232a361ae171948e7fb8e00f012ed8071ba0b8d34afc3108d821d3943a3"),
@@ -870,7 +871,7 @@ mod tests {
         ];
         let root_exp =
             hex_to_vec("3ea667f15f07b1127afe2473679069e19861bacc05df9ac42635e91bf887fa3");
-        test_verify_true::<Felt252, Poseidon3<Felt252>>(&input, root_exp);
+        test_verify_true::<Felt252, Poseidon3Hasher<Felt252>>(&input, root_exp);
 
         let input = [
             hex_to_vec("5d5e6513cb2c66f61bfa1d6a6eb8215c0637ed6cb8be3310a991a271bba195d"),
@@ -879,7 +880,7 @@ mod tests {
             hex_to_vec("dcb000821d941b4aee583805390296f859fa4b3f1d5acfa9bf7de8a561c19"),
         ];
         let root_exp = hex_to_vec("8eacf88fcb82bed025b069d23d41a3b3d7902e6e8279b3e1de42ce43061008");
-        test_verify_true::<Felt252, Poseidon3<Felt252>>(&input, root_exp);
+        test_verify_true::<Felt252, Poseidon3Hasher<Felt252>>(&input, root_exp);
 
         let input = [
             hex_to_vec("36313083bda3d5d1f1ade3dfb59311bd38f583c92f570719cb41be7e46e6ee5"),
@@ -893,7 +894,7 @@ mod tests {
         ];
         let root_exp =
             hex_to_vec("3a80041b3647dd472cb7979dc422e9b7d86d4bcd08b957a6ae05caf6c6e189b");
-        test_verify_true::<Felt252, Poseidon3<Felt252>>(&input, root_exp);
+        test_verify_true::<Felt252, Poseidon3Hasher<Felt252>>(&input, root_exp);
     }
 
     fn test_verify_false<F, H>(
@@ -1249,7 +1250,7 @@ mod tests {
             0,
             hex_to_vec("061e4f02a5fb16a37cef579d5a3bc31ab6bc3dfb112d0bbe440afcf4ef6b2dbd"),
         )]);
-        test_verify_false::<Felt252, Poseidon3<Felt252>>(&input, root_exp, &to_verify);
+        test_verify_false::<Felt252, Poseidon3Hasher<Felt252>>(&input, root_exp, &to_verify);
 
         let input = [
             hex_to_vec("02f926674daed935c5ec20daf9e116f45e74ebad57909889e6c4e60ac9a7239a"),
@@ -1261,7 +1262,7 @@ mod tests {
             1,
             hex_to_vec("0070336f8988bd453e936b157afcfcf07fa2924e5d670f36fcc9cf01ff09fc6f"),
         )]);
-        test_verify_false::<Felt252, Poseidon3<Felt252>>(&input, root_exp, &to_verify);
+        test_verify_false::<Felt252, Poseidon3Hasher<Felt252>>(&input, root_exp, &to_verify);
 
         let input = [
             hex_to_vec("167c6d08b3aec83b4b27bce5df9c9ba4dce709ea7d40497f7bf2cc2b787cc41"),
@@ -1275,7 +1276,7 @@ mod tests {
             2,
             hex_to_vec("1f8c6141be9707ec0a767257d522ef2bf321a2e9efc6b93136e3dc9d9665d26"),
         )]);
-        test_verify_false::<Felt252, Poseidon3<Felt252>>(&input, root_exp, &to_verify);
+        test_verify_false::<Felt252, Poseidon3Hasher<Felt252>>(&input, root_exp, &to_verify);
 
         let input = [
             hex_to_vec("726cb96d8303497a472d118b54046e2966076ad68b3c39a24cd96a8c5ae466b"),
@@ -1319,6 +1320,6 @@ mod tests {
                 hex_to_vec("355834fe0fb7afcbd719967841a691822148ff959c16e5ba67114a9774c57e5"),
             ),
         ]);
-        test_verify_false::<Felt252, Poseidon3<Felt252>>(&input, root_exp, &to_verify);
+        test_verify_false::<Felt252, Poseidon3Hasher<Felt252>>(&input, root_exp, &to_verify);
     }
 }

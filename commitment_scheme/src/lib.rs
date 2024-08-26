@@ -14,6 +14,7 @@ use crate::merkle::hash::MaskedHash;
 use crate::packer_hasher::PackerHasher;
 use ark_ff::PrimeField;
 use channel::{fs_prover_channel::FSProverChannel, fs_verifier_channel::FSVerifierChannel};
+use merkle::hash::Poseidon3Hasher;
 use merkle::{
     hash::{Blake2s256Hasher, Keccak256Hasher},
     merkle_commitment_scheme::{MerkleCommitmentSchemeProver, MerkleCommitmentSchemeVerifier},
@@ -385,14 +386,15 @@ where
             >::new(cur_n_elements_in_layer, channel.clone()))
         }
 
-        // "poseidon3" => {
-        //     next_inner_layer = Box::new(MerkleCommitmentSchemeVerifier::<
-        //         F,
-        //         Poseidon3<F>,
-        //         P,
-        //         W,
-        //     >::new(cur_n_elements_in_layer, channel.clone()))
-        // }
+        "poseidon3" => {
+            next_inner_layer = Box::new(
+                MerkleCommitmentSchemeVerifier::<F, Poseidon3Hasher<F>, P, W>::new(
+                    cur_n_elements_in_layer,
+                    channel.clone(),
+                ),
+            )
+        }
+
         &_ => unreachable!(),
     };
 
@@ -487,6 +489,21 @@ where
                     next_inner_layer,
                 ))
             }
+
+            "poseidon3" => {
+                next_inner_layer = Box::new(PackagingCommitmentSchemeVerifier::<
+                    F,
+                    Poseidon3Hasher<F>,
+                    P,
+                    W,
+                >::new_with_existing(
+                    32,
+                    cur_n_elements_in_layer,
+                    channel.clone(),
+                    next_inner_layer,
+                ))
+            }
+
             &_ => unreachable!(),
         };
     }
@@ -662,6 +679,32 @@ where
             Box::new(PackagingCommitmentSchemeVerifier::<
                 F,
                 Blake2s256Hasher<F>,
+                P,
+                W,
+            >::new_test(
+                size_of_element,
+                n_elements,
+                channel.clone(),
+                false,
+                packer,
+                inner_commitment_scheme,
+            ))
+        }
+
+        "poseidon3" => {
+            let packer: PackerHasher<F, Poseidon3Hasher<F>> =
+                PackerHasher::new(size_of_element, n_elements);
+
+            let inner_commitment_scheme = create_commitment_scheme_verifier_layers(
+                packer.n_packages,
+                channel.clone(),
+                n_verifier_friendly_commitment_layers,
+                commitment_hashes.clone(),
+            );
+
+            Box::new(PackagingCommitmentSchemeVerifier::<
+                F,
+                Poseidon3Hasher<F>,
                 P,
                 W,
             >::new_test(
