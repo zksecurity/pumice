@@ -8,14 +8,17 @@ use constants::{
     WIDTH, // total width of the state
 };
 
-use ark_ff::{BigInt, Field};
+use ark_ff::{BigInt, BigInteger, Field, PrimeField};
 use felt::Felt252;
+use hex::decode;
 use std::marker::PhantomData;
 
 pub trait FieldHasher<F: Field> {
     fn hash(input: &[F]) -> F;
 
     fn pair(left: F, right: F) -> F;
+
+    fn hash_bytes_to_field(bytes: &[u8]) -> F;
 }
 
 pub struct Poseidon3<F: Field> {
@@ -137,6 +140,80 @@ impl FieldHasher<Felt252> for Poseidon3<Felt252> {
         let st = Self::perm([left, right, PAD]);
         st[0]
     }
+
+    fn hash_bytes_to_field(bytes: &[u8]) -> Felt252 {
+        assert!(bytes.len() % 32 == 0);
+
+        let mut felts = Vec::new();
+
+        for chunk in bytes.chunks(32) {
+            felts.push(bytes_to_field(chunk))
+        }
+
+        Self::hash(&felts)
+    }
+}
+
+fn bytes_to_field(bytes: &[u8]) -> Felt252 {
+    let bits = {
+        let mut bits = Vec::new();
+        for byte in bytes {
+            for i in (0..8).rev() {
+                bits.push(byte & (1 << i) != 0);
+            }
+        }
+        bits
+    };
+    let big_int = <BigInt<4> as BigInteger>::from_bits_be(&bits);
+    assert!(big_int < Felt252::MODULUS);
+    Felt252::from_bigint(big_int).expect("conversion fail")
+}
+
+pub fn hex_to_vec(hex_str: &str) -> Vec<u8> {
+    let mut hex_str = String::from(hex_str);
+    let padding_length = 64_i32.saturating_sub(hex_str.len() as i32);
+    if padding_length > 0 {
+        let padding = "0".repeat(padding_length as usize);
+        hex_str.insert_str(0, &padding);
+    }
+    let mut bytes = decode(hex_str).unwrap();
+
+    let padding_length = 32_i32.saturating_sub(bytes.len() as i32);
+    if padding_length > 0 {
+        let mut padding = vec![0u8; padding_length as usize];
+        padding.append(&mut bytes);
+        bytes = padding;
+    }
+    assert_eq!(bytes.len(), 32);
+
+    bytes
+}
+
+#[test]
+fn test_poseidon3_hash_bytes() {
+    let mut bytes = Vec::new();
+    bytes.extend(hex_to_vec(
+        "6d841133e95d568a98362ae077545482f1b508cb48645f296de72f05f1e6afe",
+    ));
+    bytes.extend(hex_to_vec(
+        "23a4459537f5b7fa228d32336a00f9b241289e3c69fb3527e0614c4e77bb376",
+    ));
+    bytes.extend(hex_to_vec(
+        "7c187057c013dd3a6d8ce76683cd7875d236ca396204922122a10a77cef6f2a",
+    ));
+    bytes.extend(hex_to_vec(
+        "396f0205dbcda22900af19938d0607f8f9acc9c7a4c8d75fc19b5a1ede874b0",
+    ));
+    bytes.extend(hex_to_vec(
+        "48499957377c0df2c671fd1fcb6501b42fb63045ed8d16df08d55ab144e7ab8",
+    ));
+
+    let hash_exp = felt::hex("0x6c8e43870377cbf91153caed2091bb49ea60401045eccc2e4cc9bbf35218891");
+    let hash_nexp = felt::hex("0x6c8e43870377cbf91153caed2091bb49ea60401045eccc2e4cc9bbf35218892");
+
+    let hash_result = Poseidon3::hash_bytes_to_field(&bytes);
+    assert_eq!(hash_result, hash_exp);
+    assert_ne!(hash_result, hash_nexp);
 }
 
 #[test]

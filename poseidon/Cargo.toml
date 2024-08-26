@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 ark-ff.workspace = true
 felt = { path = "../felt" }
+hex.workspace = true
 
 [dev-dependencies]
 criterion = "0.5.1"

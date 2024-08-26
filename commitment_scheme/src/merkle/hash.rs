@@ -127,8 +127,14 @@ impl Hasher<Felt252> for Poseidon3<Felt252> {
         array.to_vec()
     }
 
-    fn hash_bytes(_data: &[u8]) -> Self::Output {
-        unimplemented!()
+    fn hash_bytes(data: &[u8]) -> Self::Output {
+        let hash = Poseidon3::hash_bytes_to_field(data)
+            .into_bigint()
+            .to_bytes_be();
+
+        let mut array = [0u8; 32];
+        array[..hash.len()].copy_from_slice(&hash);
+        array.to_vec()
     }
 }
 
