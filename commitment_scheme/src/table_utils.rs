@@ -38,6 +38,9 @@ impl Ord for RowCol {
     }
 }
 
+/// Given the Row/Col locations of data queries and integrity queries,
+/// this function returns a set of all indices of rows that contain
+/// at least one query from these given location sets.
 pub fn all_query_rows(
     data_queries: &BTreeSet<RowCol>,
     integrity_queries: &BTreeSet<RowCol>,
@@ -52,6 +55,8 @@ pub fn all_query_rows(
     all_query_rows
 }
 
+/// Returns a list of RowCol pointing to the field elements
+/// that have to be transmitted to allow the verification of the queries.
 pub fn elements_to_be_transmitted(
     n_columns: usize,
     all_query_rows: &BTreeSet<usize>,
