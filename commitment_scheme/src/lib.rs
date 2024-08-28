@@ -349,8 +349,12 @@ where
     W: Digest + Clone + 'static,
 {
     // Calculate the number of layers in the segment and the total height
-    let n_layers_in_segment =
-        n_elements_in_segment.ilog2() as usize - if n_columns == 1 { 1 } else { 0 };
+    let n_layers_in_segment = if n_elements_in_segment == 1 {
+        0
+    } else {
+        n_elements_in_segment.ilog2() as usize - if n_columns == 1 { 1 } else { 0 }
+    };
+
     let segment_tree_height = n_segments.ilog2() as usize;
     let total_height = n_layers_in_segment + segment_tree_height;
     let is_verifier_friendly_layer = total_height < n_verifier_friendly_commitment_layers;
