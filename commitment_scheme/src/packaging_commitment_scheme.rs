@@ -24,7 +24,7 @@ pub struct PackagingCommitmentSchemeProver<F: PrimeField, H: Hasher<F>, P: Prng,
     size_of_element: usize,
     n_elements_in_segment: usize,
     n_segments: usize,
-    channel: FSProverChannel<F, P, W>,
+    channel: Rc<RefCell<FSProverChannel<F, P, W>>>,
     packer: PackerHasher<F, H>,
     inner_commitment_scheme: Box<dyn CommitmentSchemeProver>,
     is_merkle_layer: bool,
@@ -41,7 +41,7 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
         size_of_element: usize,
         n_elements_in_segment: usize,
         n_segments: usize,
-        channel: FSProverChannel<F, P, W>,
+        channel: Rc<RefCell<FSProverChannel<F, P, W>>>,
         inner_commitment_scheme_factory: PackagingCommitmentSchemeProverFactory,
         is_merkle_layer: bool,
     ) -> Self {
@@ -70,7 +70,7 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
         size_of_element: usize,
         n_elements_in_segment: usize,
         n_segments: usize,
-        channel: FSProverChannel<F, P, W>,
+        channel: Rc<RefCell<FSProverChannel<F, P, W>>>,
         inner_commitment_scheme: Box<dyn CommitmentSchemeProver>,
     ) -> Self {
         let commitment_scheme = Self::new(
@@ -180,9 +180,11 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> Commitme
 
             if self.is_merkle_layer {
                 let digest = bytes_to_send.to_vec();
-                let _ = self.channel.send_decommit_node(digest);
+                let mut channel = self.channel.borrow_mut();
+                let _ = channel.send_decommit_node(digest);
             } else {
-                let _ = self.channel.send_data(bytes_to_send);
+                let mut channel = self.channel.borrow_mut();
+                let _ = channel.send_data(bytes_to_send);
             }
         }
 
@@ -196,7 +198,8 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> Commitme
     }
 
     fn get_proof(&self) -> Vec<u8> {
-        self.channel.get_proof()
+        let channel = self.channel.borrow_mut();
+        channel.get_proof()
     }
 }
 
@@ -362,19 +365,78 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> Commitme
 mod tests {
 
     use super::*;
-    use crate::{make_commitment_scheme_verifier, CommitmentHashes};
+    use crate::{make_commitment_scheme_prover, make_commitment_scheme_verifier, CommitmentHashes};
     use felt::Felt252;
     use randomness::keccak256::PrngKeccak256;
     use sha3::Sha3_256;
 
-    fn test_packaging_verifier_completeness_with(
+    fn test_packaging_completeness_with(
+        size_of_element: usize,
+        n_segments: usize,
+        n_elements: usize,
+        n_verifier_friendly_commitment_layers: usize,
+        exp_proof: Vec<u8>,
+        data: Vec<u8>,
+        queries: BTreeSet<usize>,
+        elements_to_verify: BTreeMap<usize, Vec<u8>>,
+        commitment_hashes: CommitmentHashes,
+    ) {
+        let channel_prng = PrngKeccak256::new();
+
+        // Prover
+        let prover_channel: Rc<RefCell<FSProverChannel<Felt252, PrngKeccak256, Sha3_256>>> =
+            Rc::new(RefCell::new(FSProverChannel::new(channel_prng.clone())));
+        let n_elements_in_segment = n_elements / n_segments;
+        let mut prover = make_commitment_scheme_prover(
+            size_of_element,
+            n_elements_in_segment,
+            n_segments,
+            prover_channel.clone(),
+            n_verifier_friendly_commitment_layers,
+            commitment_hashes.clone(),
+            1,
+            0,
+        );
+        for i in 0..n_segments {
+            let segment = {
+                let n_segment_bytes = size_of_element * (n_elements / n_segments);
+                &data[i * n_segment_bytes..(i + 1) * n_segment_bytes]
+            };
+            prover.add_segment_for_commitment(segment, i);
+        }
+        prover.commit();
+        let element_idxs = prover.start_decommitment_phase(queries);
+        let elements_data: Vec<u8> = element_idxs
+            .iter()
+            .flat_map(|&idx| &data[idx * size_of_element..(idx + 1) * size_of_element])
+            .cloned()
+            .collect();
+        prover.decommit(&elements_data);
+        let proof = prover_channel.borrow_mut().get_proof();
+        assert_eq!(proof, exp_proof);
+
+        // Verifier
+        let verifier_channel: Rc<RefCell<FSVerifierChannel<Felt252, PrngKeccak256, Sha3_256>>> =
+            Rc::new(RefCell::new(FSVerifierChannel::new(channel_prng, proof)));
+        let mut verifier = make_commitment_scheme_verifier(
+            size_of_element,
+            n_elements,
+            verifier_channel,
+            n_verifier_friendly_commitment_layers,
+            commitment_hashes,
+            1,
+        );
+        let _ = verifier.read_commitment();
+        assert!(verifier.verify_integrity(elements_to_verify).unwrap());
+    }
+
+    fn test_verify_corrupted(
         size_of_element: usize,
         n_elements: usize,
         n_verifier_friendly_commitment_layers: usize,
         proof: Vec<u8>,
         elements_to_verify: BTreeMap<usize, Vec<u8>>,
         commitment_hashes: CommitmentHashes,
-        exp_res: bool,
     ) {
         let channel_prng = PrngKeccak256::new();
         let verifier_channel: Rc<RefCell<FSVerifierChannel<Felt252, PrngKeccak256, Sha3_256>>> =
@@ -387,48 +449,48 @@ mod tests {
             commitment_hashes,
             1,
         );
-
         let _ = verifier.read_commitment();
-
-        assert!(verifier.verify_integrity(elements_to_verify).unwrap() == exp_res);
+        assert!(!verifier.verify_integrity(elements_to_verify).unwrap());
     }
 
     #[test]
     fn test_packaging_completeness() {
         let size_of_element = 1;
         let n_elements = 1;
-        let _n_segments = 1;
+        let n_segments = 1;
         let n_verifier_friendly_commitment_layers = 0;
-        let _data = vec![218];
-        let _queries = vec![0];
+        let data = vec![218];
+        let queries = BTreeSet::from([0]);
         let exp_proof = vec![
             144, 179, 218, 100, 7, 139, 77, 94, 125, 120, 142, 246, 58, 51, 233, 222, 113, 197,
             164, 233, 90, 95, 203, 225, 80, 92, 226, 11, 38, 65, 75, 186,
         ];
         let elements_to_verify = BTreeMap::from([(0, vec![218])]);
         let commitment_hashes = CommitmentHashes::from_single_hash("keccak256".to_string());
-        test_packaging_verifier_completeness_with(
+        test_packaging_completeness_with(
             size_of_element,
+            n_segments,
             n_elements,
             n_verifier_friendly_commitment_layers,
             exp_proof,
+            data,
+            queries,
             elements_to_verify,
             commitment_hashes,
-            true,
         );
 
         let size_of_element = 32;
         let n_elements = 4;
-        let _n_segments = 2;
+        let n_segments = 2;
         let n_verifier_friendly_commitment_layers = 0;
-        let _data: Vec<u8> = vec![
+        let data: Vec<u8> = vec![
             1, 35, 100, 184, 107, 167, 27, 153, 178, 178, 4, 16, 193, 139, 130, 53, 171, 152, 226,
             105, 245, 241, 72, 163, 50, 42, 211, 163, 168, 41, 209, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
-        let _queries: Vec<usize> = vec![2, 3];
+        let queries = BTreeSet::from([2, 3]);
         let exp_proof: Vec<u8> = vec![
             30, 203, 180, 40, 198, 195, 135, 138, 82, 181, 102, 57, 157, 204, 229, 11, 171, 220,
             225, 49, 123, 125, 106, 107, 26, 60, 209, 112, 118, 253, 69, 144, 188, 211, 231, 5,
@@ -452,27 +514,29 @@ mod tests {
             ),
         ]);
         let commitment_hashes = CommitmentHashes::from_single_hash("keccak256".to_string());
-        test_packaging_verifier_completeness_with(
+        test_packaging_completeness_with(
             size_of_element,
+            n_segments,
             n_elements,
             n_verifier_friendly_commitment_layers,
             exp_proof,
+            data,
+            queries,
             elements_to_verify,
             commitment_hashes,
-            true,
         );
 
         let size_of_element = 9;
         let n_elements = 8;
-        let _n_segments = 1;
+        let n_segments = 1;
         let n_verifier_friendly_commitment_layers = 0;
-        let _data: Vec<u8> = vec![
+        let data: Vec<u8> = vec![
             4, 90, 97, 132, 3, 36, 87, 219, 51, 182, 28, 167, 37, 233, 113, 129, 120, 66, 148, 157,
             113, 212, 10, 142, 81, 151, 47, 212, 110, 9, 191, 172, 184, 18, 38, 85, 28, 20, 113,
             33, 169, 7, 62, 125, 232, 129, 32, 248, 19, 171, 203, 4, 98, 161, 174, 222, 239, 94,
             124, 218, 67, 84, 16, 249, 51, 75, 2, 29, 214, 172, 247, 141,
         ];
-        let _queries: Vec<usize> = vec![0, 1, 2, 3, 4, 7];
+        let queries = BTreeSet::from([0, 1, 2, 3, 4, 7]);
         let exp_proof: Vec<u8> = vec![
             227, 216, 27, 24, 119, 173, 119, 23, 6, 143, 172, 94, 211, 230, 252, 178, 181, 162,
             103, 224, 82, 199, 136, 76, 191, 61, 234, 103, 168, 121, 179, 118, 129, 32, 248, 19,
@@ -487,50 +551,54 @@ mod tests {
             (7, vec![249, 51, 75, 2, 29, 214, 172, 247, 141]),
         ]);
         let commitment_hashes = CommitmentHashes::from_single_hash("keccak256".to_string());
-        test_packaging_verifier_completeness_with(
+        test_packaging_completeness_with(
             size_of_element,
+            n_segments,
             n_elements,
             n_verifier_friendly_commitment_layers,
             exp_proof.clone(),
+            data,
+            queries,
             elements_to_verify.clone(),
             commitment_hashes.clone(),
-            true,
         );
+
+        // test corrupted_proof fails
         let mut corrupted_proof = exp_proof.clone();
         corrupted_proof[11] ^= 1;
-        test_packaging_verifier_completeness_with(
+        test_verify_corrupted(
             size_of_element,
             n_elements,
             n_verifier_friendly_commitment_layers,
             corrupted_proof,
             elements_to_verify.clone(),
             commitment_hashes.clone(),
-            false,
         );
-        let mut corrupted_data: BTreeMap<usize, Vec<u8>> = elements_to_verify;
+
+        // test corrupted_data fails
+        let mut corrupted_data: BTreeMap<usize, Vec<u8>> = elements_to_verify.clone();
         corrupted_data.get_mut(&3).map(|v| v[0] = 99);
-        test_packaging_verifier_completeness_with(
+        test_verify_corrupted(
             size_of_element,
             n_elements,
             n_verifier_friendly_commitment_layers,
             exp_proof,
             corrupted_data,
             commitment_hashes,
-            false,
         );
 
         let size_of_element = 32;
         let n_elements = 4;
-        let _n_segments = 1;
+        let n_segments = 1;
         let n_verifier_friendly_commitment_layers = 0;
-        let _data: Vec<u8> = vec![
+        let data: Vec<u8> = vec![
             0, 244, 180, 10, 155, 113, 242, 248, 48, 242, 218, 212, 163, 250, 94, 65, 248, 34, 62,
             45, 135, 203, 137, 51, 226, 102, 52, 31, 183, 44, 63, 77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
-        let _queries: Vec<usize> = vec![0, 1, 2, 3];
+        let queries = BTreeSet::from([0, 1, 2, 3]);
         let exp_proof: Vec<u8> = vec![
             226, 176, 114, 29, 157, 171, 34, 248, 182, 241, 254, 5, 43, 225, 0, 170, 122, 203, 186,
             188, 169, 218, 71, 145, 121, 80, 14, 246, 189, 160, 236, 130,
@@ -566,28 +634,30 @@ mod tests {
             ),
         ]);
         let commitment_hashes = CommitmentHashes::from_single_hash("keccak256".to_string());
-        test_packaging_verifier_completeness_with(
+        test_packaging_completeness_with(
             size_of_element,
+            n_segments,
             n_elements,
             n_verifier_friendly_commitment_layers,
             exp_proof,
+            data,
+            queries,
             elements_to_verify,
             commitment_hashes,
-            true,
         );
 
         let size_of_element = 32;
         let n_elements = 4;
-        let _n_segments = 2;
+        let n_segments = 2;
         let n_verifier_friendly_commitment_layers = 0;
-        let _data: Vec<u8> = vec![
+        let data: Vec<u8> = vec![
             0, 69, 9, 83, 116, 186, 114, 166, 162, 161, 5, 164, 38, 245, 112, 70, 202, 33, 63, 186,
             85, 163, 0, 139, 112, 108, 14, 98, 197, 219, 225, 74, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
-        let _queries: Vec<usize> = vec![0];
+        let queries = BTreeSet::from([0]);
         let exp_proof: Vec<u8> = vec![
             146, 94, 184, 144, 65, 226, 66, 73, 78, 28, 77, 148, 37, 124, 200, 171, 209, 97, 100,
             196, 17, 231, 9, 39, 122, 53, 63, 43, 193, 194, 119, 162, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -603,50 +673,54 @@ mod tests {
             ],
         )]);
         let commitment_hashes = CommitmentHashes::from_single_hash("keccak256".to_string());
-        test_packaging_verifier_completeness_with(
+        test_packaging_completeness_with(
             size_of_element,
+            n_segments,
             n_elements,
             n_verifier_friendly_commitment_layers,
             exp_proof.clone(),
+            data,
+            queries,
             elements_to_verify.clone(),
             commitment_hashes.clone(),
-            true,
         );
+
+        // test corrupted_proof fails
         let mut corrupted_proof = exp_proof.clone();
         corrupted_proof[7] ^= 1;
-        test_packaging_verifier_completeness_with(
+        test_verify_corrupted(
             size_of_element,
             n_elements,
             n_verifier_friendly_commitment_layers,
             corrupted_proof,
             elements_to_verify.clone(),
             commitment_hashes.clone(),
-            false,
         );
-        let mut corrupted_data: BTreeMap<usize, Vec<u8>> = elements_to_verify;
+
+        // test corrupted_data fails
+        let mut corrupted_data: BTreeMap<usize, Vec<u8>> = elements_to_verify.clone();
         corrupted_data.get_mut(&0).map(|v| v[5] = 109);
-        test_packaging_verifier_completeness_with(
+        test_verify_corrupted(
             size_of_element,
             n_elements,
             n_verifier_friendly_commitment_layers,
             exp_proof,
             corrupted_data,
             commitment_hashes,
-            false,
         );
 
         let size_of_element = 32;
         let n_elements = 4;
-        let _n_segments = 2;
+        let n_segments = 2;
         let n_verifier_friendly_commitment_layers = 1;
-        let _data: Vec<u8> = vec![
+        let data: Vec<u8> = vec![
             2, 129, 165, 248, 198, 144, 235, 236, 30, 71, 164, 35, 47, 38, 145, 108, 41, 53, 65,
             169, 165, 85, 179, 25, 169, 23, 109, 11, 38, 0, 206, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
-        let _queries: Vec<usize> = vec![0, 1, 2, 3];
+        let queries = BTreeSet::from([0, 1, 2, 3]);
         let exp_proof: Vec<u8> = vec![
             148, 85, 7, 241, 56, 123, 72, 220, 51, 26, 148, 117, 239, 101, 123, 151, 113, 30, 182,
             47, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -685,28 +759,30 @@ mod tests {
             "blake2s256_masked160_msb".to_string(),
             "keccak256_masked160_msb".to_string(),
         );
-        test_packaging_verifier_completeness_with(
+        test_packaging_completeness_with(
             size_of_element,
+            n_segments,
             n_elements,
             n_verifier_friendly_commitment_layers,
             exp_proof,
+            data,
+            queries,
             elements_to_verify,
             commitment_hashes,
-            true,
         );
 
         let size_of_element = 32;
         let n_elements = 4;
-        let _n_segments = 2;
+        let n_segments = 2;
         let n_verifier_friendly_commitment_layers = 1;
-        let _data: Vec<u8> = vec![
+        let data: Vec<u8> = vec![
             6, 253, 243, 32, 167, 44, 209, 69, 4, 235, 114, 63, 109, 243, 205, 172, 86, 124, 152,
             43, 252, 153, 20, 15, 150, 124, 37, 19, 90, 90, 67, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
-        let _queries = vec![0, 1];
+        let queries = BTreeSet::from([0, 1]);
         let exp_proof = vec![
             77, 253, 172, 222, 133, 197, 92, 214, 26, 4, 252, 10, 29, 34, 186, 18, 196, 230, 161,
             136, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 173, 50, 40, 182, 118, 247, 211, 205, 66, 132,
@@ -732,21 +808,23 @@ mod tests {
             "blake2s256_masked160_msb".to_string(),
             "keccak256_masked160_msb".to_string(),
         );
-        test_packaging_verifier_completeness_with(
+        test_packaging_completeness_with(
             size_of_element,
+            n_segments,
             n_elements,
             n_verifier_friendly_commitment_layers,
             exp_proof,
+            data,
+            queries,
             elements_to_verify,
             commitment_hashes,
-            true,
         );
 
         let size_of_element = 32;
         let n_elements = 64;
-        let _n_segments = 4;
+        let n_segments = 4;
         let n_verifier_friendly_commitment_layers = 3;
-        let _data = vec![
+        let data = vec![
             5, 232, 237, 174, 93, 188, 164, 229, 182, 2, 128, 179, 44, 187, 71, 132, 176, 176, 140,
             160, 1, 240, 255, 110, 247, 22, 15, 142, 65, 87, 15, 250, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -820,7 +898,7 @@ mod tests {
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
-        let _queries = vec![13, 49, 54, 59];
+        let queries = BTreeSet::from([13, 49, 54, 59]);
         let exp_proof = vec![
             17, 175, 217, 238, 242, 6, 83, 8, 198, 201, 188, 40, 133, 58, 238, 12, 53, 151, 212,
             120, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -877,21 +955,23 @@ mod tests {
             "blake2s256_masked160_msb".to_string(),
             "keccak256_masked160_msb".to_string(),
         );
-        test_packaging_verifier_completeness_with(
+        test_packaging_completeness_with(
             size_of_element,
+            n_segments,
             n_elements,
             n_verifier_friendly_commitment_layers,
             exp_proof,
+            data,
+            queries,
             elements_to_verify,
             commitment_hashes,
-            true,
         );
 
         let size_of_element = 32;
         let n_elements = 64;
-        let _n_segments = 4;
+        let n_segments = 4;
         let n_verifier_friendly_commitment_layers = 2;
-        let _data = vec![
+        let data = vec![
             3, 201, 186, 225, 81, 215, 243, 89, 118, 154, 231, 57, 45, 88, 205, 242, 194, 148, 120,
             156, 153, 18, 99, 4, 233, 245, 72, 190, 7, 227, 9, 93, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -965,7 +1045,7 @@ mod tests {
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
-        let _queries = vec![16, 21, 61];
+        let queries = BTreeSet::from([16, 21, 61]);
         let exp_proof = vec![
             237, 198, 151, 95, 18, 160, 125, 96, 36, 131, 148, 10, 144, 115, 33, 81, 132, 225, 252,
             105, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -1012,21 +1092,23 @@ mod tests {
             "blake2s256_masked160_msb".to_string(),
             "keccak256_masked160_msb".to_string(),
         );
-        test_packaging_verifier_completeness_with(
+        test_packaging_completeness_with(
             size_of_element,
+            n_segments,
             n_elements,
             n_verifier_friendly_commitment_layers,
             exp_proof,
+            data,
+            queries,
             elements_to_verify,
             commitment_hashes,
-            true,
         );
 
         let size_of_element = 32;
         let n_elements = 64;
-        let _n_segments = 4;
+        let n_segments = 4;
         let n_verifier_friendly_commitment_layers = 3;
-        let _data = vec![
+        let data = vec![
             4, 62, 165, 207, 178, 161, 255, 94, 234, 135, 162, 93, 45, 235, 250, 23, 66, 110, 137,
             7, 49, 49, 148, 11, 192, 167, 100, 199, 177, 152, 22, 86, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -1100,7 +1182,7 @@ mod tests {
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
-        let _queries = vec![0, 4, 21, 22, 36, 37, 41, 45, 62];
+        let queries = BTreeSet::from([0, 4, 21, 22, 36, 37, 41, 45, 62]);
         let exp_proof = vec![
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 22, 156, 54, 64, 65, 75, 26, 56, 40, 245, 224, 208,
             216, 200, 6, 163, 221, 71, 152, 155, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -1200,21 +1282,23 @@ mod tests {
             "keccak256_masked160_lsb".to_string(),
             "blake2s256_masked160_lsb".to_string(),
         );
-        test_packaging_verifier_completeness_with(
+        test_packaging_completeness_with(
             size_of_element,
+            n_segments,
             n_elements,
             n_verifier_friendly_commitment_layers,
             exp_proof,
+            data,
+            queries,
             elements_to_verify,
             commitment_hashes,
-            true,
         );
 
         let size_of_element = 32;
         let n_elements = 64;
-        let _n_segments = 4;
+        let n_segments = 4;
         let n_verifier_friendly_commitment_layers = 3;
-        let _data = vec![
+        let data = vec![
             6, 131, 174, 83, 201, 249, 197, 17, 243, 232, 9, 66, 33, 131, 135, 181, 199, 174, 234,
             204, 8, 69, 23, 131, 82, 244, 121, 48, 2, 82, 192, 94, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -1288,7 +1372,7 @@ mod tests {
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
-        let _queries = vec![42, 62];
+        let queries = BTreeSet::from([42, 62]);
         let exp_proof = vec![
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 163, 184, 207, 108, 154, 156, 115, 68, 165, 230, 8,
             11, 226, 107, 73, 58, 181, 117, 60, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -1326,21 +1410,23 @@ mod tests {
             "keccak256_masked160_lsb".to_string(),
             "blake2s256_masked160_lsb".to_string(),
         );
-        test_packaging_verifier_completeness_with(
+        test_packaging_completeness_with(
             size_of_element,
+            n_segments,
             n_elements,
             n_verifier_friendly_commitment_layers,
             exp_proof,
+            data,
+            queries,
             elements_to_verify,
             commitment_hashes,
-            true,
         );
 
         let size_of_element = 32;
         let n_elements = 64;
-        let _n_segments = 4;
+        let n_segments = 4;
         let n_verifier_friendly_commitment_layers = 2;
-        let _data = vec![
+        let data = vec![
             3, 99, 203, 140, 171, 33, 105, 160, 139, 151, 173, 147, 250, 53, 221, 32, 204, 234,
             165, 101, 61, 47, 82, 4, 137, 35, 5, 241, 64, 184, 137, 182, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -1414,7 +1500,7 @@ mod tests {
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
-        let _queries = vec![0, 7, 22, 28, 42, 61];
+        let queries = BTreeSet::from([0, 7, 22, 28, 42, 61]);
         let exp_proof = vec![
             6, 193, 108, 112, 161, 111, 253, 173, 27, 253, 242, 186, 87, 196, 148, 220, 106, 210,
             227, 252, 135, 73, 22, 226, 59, 221, 124, 183, 98, 77, 111, 34, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -1493,21 +1579,23 @@ mod tests {
             "poseidon3".to_string(),
             "blake2s256_masked160_lsb".to_string(),
         );
-        test_packaging_verifier_completeness_with(
+        test_packaging_completeness_with(
             size_of_element,
+            n_segments,
             n_elements,
             n_verifier_friendly_commitment_layers,
             exp_proof,
+            data,
+            queries,
             elements_to_verify,
             commitment_hashes,
-            true,
         );
 
         let size_of_element = 32;
         let n_elements = 64;
-        let _n_segments = 4;
+        let n_segments = 4;
         let n_verifier_friendly_commitment_layers = 3;
-        let _data = vec![
+        let data = vec![
             6, 72, 142, 255, 93, 198, 227, 20, 16, 188, 20, 43, 161, 65, 107, 118, 43, 52, 123,
             179, 244, 180, 100, 83, 204, 121, 101, 255, 103, 208, 216, 84, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -1581,7 +1669,7 @@ mod tests {
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
-        let _queries = vec![3, 11, 18, 23, 43, 48, 58];
+        let queries = BTreeSet::from([3, 11, 18, 23, 43, 48, 58]);
         let exp_proof = vec![
             1, 56, 182, 201, 169, 211, 93, 20, 168, 73, 109, 246, 232, 70, 231, 168, 99, 239, 98,
             232, 150, 80, 183, 49, 85, 232, 96, 245, 243, 140, 243, 167, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -1670,20 +1758,22 @@ mod tests {
             "poseidon3".to_string(),
             "blake2s256_masked160_lsb".to_string(),
         );
-        test_packaging_verifier_completeness_with(
+        test_packaging_completeness_with(
             size_of_element,
+            n_segments,
             n_elements,
             n_verifier_friendly_commitment_layers,
             exp_proof,
+            data,
+            queries,
             elements_to_verify,
             commitment_hashes,
-            true,
         );
 
         let size_of_element = 158;
         let n_elements = 1;
-        let _n_segments = 1;
-        let _data = vec![
+        let n_segments = 1;
+        let data = vec![
             68, 215, 79, 252, 234, 215, 70, 33, 216, 200, 46, 192, 55, 79, 114, 239, 107, 105, 248,
             81, 235, 78, 50, 46, 225, 177, 103, 220, 57, 160, 26, 132, 191, 245, 10, 139, 12, 104,
             202, 67, 118, 130, 15, 121, 157, 20, 45, 101, 94, 142, 111, 115, 3, 41, 119, 118, 156,
@@ -1694,7 +1784,7 @@ mod tests {
             91, 213, 8, 86, 133, 242, 75, 213, 246, 150, 110, 211, 101, 242, 174, 112, 237, 19,
             235, 122, 40, 246, 18, 87, 27, 224, 2, 146, 109,
         ];
-        let _queries = BTreeSet::from([0]);
+        let queries = BTreeSet::from([0]);
         let exp_proof = vec![
             212, 141, 127, 140, 236, 1, 122, 153, 95, 242, 159, 113, 11, 121, 162, 179, 207, 217,
             198, 211, 157, 149, 113, 156, 102, 20, 96, 214, 99, 135, 128, 58,
@@ -1714,36 +1804,40 @@ mod tests {
             ],
         )]);
         let commitment_hashes = CommitmentHashes::from_single_hash("keccak256".to_string());
-        test_packaging_verifier_completeness_with(
+        test_packaging_completeness_with(
             size_of_element,
+            n_segments,
             n_elements,
             n_verifier_friendly_commitment_layers,
             exp_proof.clone(),
+            data,
+            queries,
             elements_to_verify.clone(),
             commitment_hashes.clone(),
-            true,
         );
+
+        // test corrupted_proof fails
         let mut corrupted_proof = exp_proof.clone();
         corrupted_proof[10] ^= 1;
-        test_packaging_verifier_completeness_with(
+        test_verify_corrupted(
             size_of_element,
             n_elements,
             n_verifier_friendly_commitment_layers,
             corrupted_proof,
             elements_to_verify.clone(),
             commitment_hashes.clone(),
-            false,
         );
-        let mut corrupted_data: BTreeMap<usize, Vec<u8>> = elements_to_verify;
+
+        // test corrupted_data fails
+        let mut corrupted_data: BTreeMap<usize, Vec<u8>> = elements_to_verify.clone();
         corrupted_data.get_mut(&0).map(|v| v[0] = 99);
-        test_packaging_verifier_completeness_with(
+        test_verify_corrupted(
             size_of_element,
             n_elements,
             n_verifier_friendly_commitment_layers,
             exp_proof,
             corrupted_data,
             commitment_hashes,
-            false,
         );
     }
 }

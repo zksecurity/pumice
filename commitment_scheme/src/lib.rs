@@ -127,7 +127,7 @@ fn create_all_commitment_scheme_layers<F, P, W>(
     _n_out_of_memory_merkle_layers: usize,
     n_elements_in_segment: usize,
     n_segments: usize,
-    channel: FSProverChannel<F, P, W>,
+    channel: Rc<RefCell<FSProverChannel<F, P, W>>>,
     n_verifier_friendly_commitment_layers: usize,
     commitment_hashes: CommitmentHashes,
 ) -> Box<dyn CommitmentSchemeProver>
@@ -149,9 +149,49 @@ where
                 ),
             )
         }
+        "keccak256_masked160_msb" => {
+            next_inner_layer = Box::new(MerkleCommitmentSchemeProver::<
+                F,
+                MaskedHash<F, Keccak256Hasher<F>, 20, true>,
+                P,
+                W,
+            >::new(n_segments, channel.clone()))
+        }
+        "keccak256_masked160_lsb" => {
+            next_inner_layer = Box::new(MerkleCommitmentSchemeProver::<
+                F,
+                MaskedHash<F, Keccak256Hasher<F>, 20, false>,
+                P,
+                W,
+            >::new(n_segments, channel.clone()))
+        }
         "blake2s256" => {
             next_inner_layer = Box::new(
                 MerkleCommitmentSchemeProver::<F, Blake2s256Hasher<F>, P, W>::new(
+                    n_segments,
+                    channel.clone(),
+                ),
+            )
+        }
+        "blake2s256_masked160_msb" => {
+            next_inner_layer = Box::new(MerkleCommitmentSchemeProver::<
+                F,
+                MaskedHash<F, Blake2s256Hasher<F>, 20, true>,
+                P,
+                W,
+            >::new(n_segments, channel.clone()))
+        }
+        "blake2s256_masked160_lsb" => {
+            next_inner_layer = Box::new(MerkleCommitmentSchemeProver::<
+                F,
+                MaskedHash<F, Blake2s256Hasher<F>, 20, false>,
+                P,
+                W,
+            >::new(n_segments, channel.clone()))
+        }
+        "poseidon3" => {
+            next_inner_layer = Box::new(
+                MerkleCommitmentSchemeProver::<F, Poseidon3Hasher<F>, P, W>::new(
                     n_segments,
                     channel.clone(),
                 ),
@@ -202,10 +242,80 @@ where
                     next_inner_layer,
                 ))
             }
+            "keccak256_masked160_msb" => {
+                next_inner_layer = Box::new(PackagingCommitmentSchemeProver::<
+                    F,
+                    MaskedHash<F, Keccak256Hasher<F>, 20, true>,
+                    P,
+                    W,
+                >::new_with_existing(
+                    32,
+                    cur_n_elements_in_segment,
+                    n_segments,
+                    channel.clone(),
+                    next_inner_layer,
+                ))
+            }
+            "keccak256_masked160_lsb" => {
+                next_inner_layer = Box::new(PackagingCommitmentSchemeProver::<
+                    F,
+                    MaskedHash<F, Keccak256Hasher<F>, 20, false>,
+                    P,
+                    W,
+                >::new_with_existing(
+                    32,
+                    cur_n_elements_in_segment,
+                    n_segments,
+                    channel.clone(),
+                    next_inner_layer,
+                ))
+            }
             "blake2s256" => {
                 next_inner_layer = Box::new(PackagingCommitmentSchemeProver::<
                     F,
                     Blake2s256Hasher<F>,
+                    P,
+                    W,
+                >::new_with_existing(
+                    32,
+                    cur_n_elements_in_segment,
+                    n_segments,
+                    channel.clone(),
+                    next_inner_layer,
+                ))
+            }
+            "blake2s256_masked160_msb" => {
+                next_inner_layer = Box::new(PackagingCommitmentSchemeProver::<
+                    F,
+                    MaskedHash<F, Blake2s256Hasher<F>, 20, true>,
+                    P,
+                    W,
+                >::new_with_existing(
+                    32,
+                    cur_n_elements_in_segment,
+                    n_segments,
+                    channel.clone(),
+                    next_inner_layer,
+                ))
+            }
+            "blake2s256_masked160_lsb" => {
+                next_inner_layer = Box::new(PackagingCommitmentSchemeProver::<
+                    F,
+                    MaskedHash<F, Blake2s256Hasher<F>, 20, false>,
+                    P,
+                    W,
+                >::new_with_existing(
+                    32,
+                    cur_n_elements_in_segment,
+                    n_segments,
+                    channel.clone(),
+                    next_inner_layer,
+                ))
+            }
+            "poseidon3" => {
+                next_inner_layer = Box::new(PackagingCommitmentSchemeProver::<
+                    F,
+                    Poseidon3Hasher<F>,
                     P,
                     W,
                 >::new_with_existing(
@@ -227,7 +337,7 @@ pub fn make_commitment_scheme_prover<F, P, W>(
     size_of_element: usize,
     n_elements_in_segment: usize,
     n_segments: usize,
-    channel: &mut FSProverChannel<F, P, W>,
+    channel: Rc<RefCell<FSProverChannel<F, P, W>>>,
     n_verifier_friendly_commitment_layers: usize,
     commitment_hashes: CommitmentHashes,
     n_columns: usize,
@@ -277,6 +387,36 @@ where
                     ),
                 )
         }
+        "keccak256_masked160_msb" => {
+            commitment_scheme = Box::new(PackagingCommitmentSchemeProver::<
+                F,
+                MaskedHash<F, Keccak256Hasher<F>, 20, true>,
+                P,
+                W,
+            >::new(
+                size_of_element,
+                n_elements_in_segment,
+                n_segments,
+                channel.clone(),
+                inner_commitment_scheme_factory,
+                false,
+            ))
+        }
+        "keccak256_masked160_lsb" => {
+            commitment_scheme = Box::new(PackagingCommitmentSchemeProver::<
+                F,
+                MaskedHash<F, Keccak256Hasher<F>, 20, false>,
+                P,
+                W,
+            >::new(
+                size_of_element,
+                n_elements_in_segment,
+                n_segments,
+                channel.clone(),
+                inner_commitment_scheme_factory,
+                false,
+            ))
+        }
         "blake2s256" => {
             commitment_scheme = Box::new(PackagingCommitmentSchemeProver::<
                 F,
@@ -291,6 +431,49 @@ where
                 inner_commitment_scheme_factory,
                 false,
             ))
+        }
+        "blake2s256_masked160_msb" => {
+            commitment_scheme = Box::new(PackagingCommitmentSchemeProver::<
+                F,
+                MaskedHash<F, Blake2s256Hasher<F>, 20, true>,
+                P,
+                W,
+            >::new(
+                size_of_element,
+                n_elements_in_segment,
+                n_segments,
+                channel.clone(),
+                inner_commitment_scheme_factory,
+                false,
+            ))
+        }
+        "blake2s256_masked160_lsb" => {
+            commitment_scheme = Box::new(PackagingCommitmentSchemeProver::<
+                F,
+                MaskedHash<F, Blake2s256Hasher<F>, 20, false>,
+                P,
+                W,
+            >::new(
+                size_of_element,
+                n_elements_in_segment,
+                n_segments,
+                channel.clone(),
+                inner_commitment_scheme_factory,
+                false,
+            ))
+        }
+        "poseidon3" => {
+            commitment_scheme =
+                Box::new(
+                    PackagingCommitmentSchemeProver::<F, Poseidon3Hasher<F>, P, W>::new(
+                        size_of_element,
+                        n_elements_in_segment,
+                        n_segments,
+                        channel.clone(),
+                        inner_commitment_scheme_factory,
+                        false,
+                    ),
+                )
         }
         &_ => unreachable!(),
     };
@@ -721,216 +904,4 @@ where
     };
 
     commitment_scheme
-}
-
-mod tests {
-
-    use channel::ProverChannel;
-    use merkle::hash::Hasher;
-    use randomness::keccak256::PrngKeccak256;
-    use std::collections::HashMap;
-    use std::marker::PhantomData;
-
-    use super::*;
-
-    #[allow(dead_code)]
-    pub trait CommitmentSchemePair<F: PrimeField, P: Prng, W: Digest> {
-        type Prover: CommitmentSchemeProver;
-        type Verifier: CommitmentSchemeVerifier;
-        type Hash: Hasher<F>;
-
-        fn create_prover(
-            prover_channel: FSProverChannel<F, P, W>,
-            size_of_element: usize,
-            n_elements_in_segment: usize,
-            n_segments: usize,
-            n_layers: usize,
-            n_verifier_friendly_commitment_layers: usize,
-        ) -> Self::Prover;
-
-        fn create_verifier(
-            verifier_channel: Rc<RefCell<FSVerifierChannel<F, P, W>>>,
-            size_of_element: usize,
-            n_elements: usize,
-            n_verifier_friendly_commitment_layers: usize,
-        ) -> Self::Verifier;
-
-        fn draw_size_of_element(prng: &mut PrngKeccak256) -> usize;
-
-        const IS_MERKLE: bool;
-        const MIN_ELEMENT_SIZE: usize;
-    }
-
-    pub struct MerkleCommitmentSchemePair<F: PrimeField, H: Hasher<F>> {
-        _ph: PhantomData<(F, H)>,
-    }
-
-    impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
-        CommitmentSchemePair<F, P, W> for MerkleCommitmentSchemePair<F, H>
-    {
-        // Define Prover and Verifier types
-        type Hash = H;
-        type Prover = MerkleCommitmentSchemeProver<F, H, P, W>;
-        type Verifier = MerkleCommitmentSchemeVerifier<F, H, P, W>;
-
-        // CreateProver function
-        fn create_prover(
-            prover_channel: FSProverChannel<F, P, W>,
-            _size_of_element: usize,
-            n_elements_in_segment: usize,
-            n_segments: usize,
-            _n_layers: usize,
-            _n_verifier_friendly_commitment_layers: usize,
-        ) -> Self::Prover {
-            assert!(n_elements_in_segment == 1);
-
-            Self::Prover::new(n_segments, prover_channel)
-        }
-
-        // CreateVerifier function
-        fn create_verifier(
-            verifier_channel: Rc<RefCell<FSVerifierChannel<F, P, W>>>,
-            _size_of_element: usize,
-            n_elements: usize,
-            _n_verifier_friendly_commitment_layers: usize,
-        ) -> Self::Verifier {
-            Self::Verifier::new(n_elements, verifier_channel)
-        }
-
-        // DrawSizeOfElement function
-        fn draw_size_of_element(_prng: &mut PrngKeccak256) -> usize {
-            H::DIGEST_NUM_BYTES
-        }
-
-        // Static constants
-        const IS_MERKLE: bool = true;
-        const MIN_ELEMENT_SIZE: usize = H::DIGEST_NUM_BYTES;
-    }
-
-    #[allow(dead_code)]
-    pub struct CommitmentScheme<F: PrimeField, P: Prng, W: Digest, T: CommitmentSchemePair<F, P, W>> {
-        channel_prng: P,
-        size_of_element: usize,
-        n_elements: usize,
-        n_segments: usize,
-        data: Vec<u8>,
-        queries: BTreeSet<usize>,
-        n_verifier_friendly_commitment_layers: usize,
-        _marker: std::marker::PhantomData<(F, P, W, T)>,
-    }
-
-    #[allow(dead_code)]
-    impl<F: PrimeField, P: Prng + Clone, W: Digest + Clone, T: CommitmentSchemePair<F, P, W>>
-        CommitmentScheme<F, P, W, T>
-    {
-        pub fn new(
-            channel_prng: P,
-            n_elements: usize,
-            n_segments: usize,
-            data: Vec<u8>,
-            queries: BTreeSet<usize>,
-            n_verifier_friendly_commitment_layers: usize,
-        ) -> Self {
-            let size_of_element = T::Hash::DIGEST_NUM_BYTES;
-            CommitmentScheme {
-                channel_prng,
-                size_of_element,
-                n_elements,
-                n_segments,
-                data,
-                queries,
-                n_verifier_friendly_commitment_layers,
-                _marker: std::marker::PhantomData,
-            }
-        }
-
-        pub fn get_prover_channel(&self) -> FSProverChannel<F, P, W> {
-            FSProverChannel::new(self.channel_prng.clone())
-        }
-
-        pub fn get_verifier_channel(
-            &self,
-            proof: &[u8],
-        ) -> Rc<RefCell<FSVerifierChannel<F, P, W>>> {
-            Rc::new(RefCell::new(FSVerifierChannel::new(
-                self.channel_prng.clone(),
-                proof.to_vec(),
-            )))
-        }
-
-        fn get_num_segments(&self) -> usize {
-            self.n_segments
-        }
-
-        fn get_num_elements_in_segment(&self) -> usize {
-            self.n_elements / self.n_segments
-        }
-
-        fn get_segment(&self, index: usize) -> &[u8] {
-            let n_segment_bytes = self.size_of_element * self.get_num_elements_in_segment();
-            &self.data[index * n_segment_bytes..(index + 1) * n_segment_bytes]
-        }
-
-        fn get_element(&self, index: usize) -> &[u8] {
-            &self.data[index * self.size_of_element..(index + 1) * self.size_of_element]
-        }
-
-        pub fn get_sparse_data(&self) -> HashMap<usize, Vec<u8>> {
-            self.queries
-                .iter()
-                .map(|&q| (q, self.get_element(q).to_vec()))
-                .collect()
-        }
-
-        pub fn generate_proof(
-            &self,
-            n_out_of_memory_layers: usize,
-            include_decommitment: bool,
-        ) -> Vec<u8> {
-            let prover_channel = self.get_prover_channel();
-            let mut committer = T::create_prover(
-                prover_channel.clone(),
-                self.size_of_element,
-                self.get_num_elements_in_segment(),
-                self.n_segments,
-                n_out_of_memory_layers,
-                self.n_verifier_friendly_commitment_layers,
-            );
-
-            for i in 0..self.n_segments {
-                let segment = self.get_segment(i);
-                committer.add_segment_for_commitment(segment, i);
-            }
-            committer.commit();
-
-            if include_decommitment {
-                let element_idxs = committer.start_decommitment_phase(self.queries.clone());
-                let elements_data: Vec<u8> = element_idxs
-                    .iter()
-                    .flat_map(|&idx| self.get_element(idx))
-                    .cloned()
-                    .collect();
-                committer.decommit(&elements_data);
-            }
-
-            prover_channel.get_proof()
-        }
-
-        pub fn verify_proof(
-            &self,
-            proof: &[u8],
-            elements_to_verify: BTreeMap<usize, Vec<u8>>,
-        ) -> bool {
-            let verifier_channel = self.get_verifier_channel(proof);
-            let mut verifier = T::create_verifier(
-                verifier_channel,
-                self.size_of_element,
-                self.n_elements,
-                self.n_verifier_friendly_commitment_layers,
-            );
-
-            let _ = verifier.read_commitment();
-            verifier.verify_integrity(elements_to_verify).unwrap()
-        }
-    }
 }

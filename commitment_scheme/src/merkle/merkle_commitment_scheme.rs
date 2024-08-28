@@ -19,7 +19,7 @@ use super::MerkleTree;
 #[allow(dead_code)]
 pub struct MerkleCommitmentSchemeProver<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> {
     n_elements: usize,
-    channel: FSProverChannel<F, P, W>,
+    channel: Rc<RefCell<FSProverChannel<F, P, W>>>,
     tree: MerkleTree<F, H>,
     min_segment_bytes: usize,
     size_of_element: usize,
@@ -28,7 +28,7 @@ pub struct MerkleCommitmentSchemeProver<F: PrimeField, H: Hasher<F>, P: Prng, W:
 
 impl<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> MerkleCommitmentSchemeProver<F, H, P, W> {
     #[allow(dead_code)]
-    pub fn new(n_elements: usize, channel: FSProverChannel<F, P, W>) -> Self {
+    pub fn new(n_elements: usize, channel: Rc<RefCell<FSProverChannel<F, P, W>>>) -> Self {
         let tree = MerkleTree::new(n_elements);
         Self {
             n_elements,
@@ -69,7 +69,8 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> Commitme
         let comm = self
             .tree
             .get_root(height - self.segment_length_in_elements().ilog2() as usize);
-        let _ = self.channel.send_commit_hash(comm);
+        let mut channel = self.channel.borrow_mut();
+        let _ = channel.send_commit_hash(comm);
     }
 
     fn start_decommitment_phase(&mut self, queries: BTreeSet<usize>) -> Vec<usize> {
@@ -79,12 +80,13 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> Commitme
 
     fn decommit(&mut self, elements_data: &[u8]) {
         assert!(elements_data.is_empty());
-        self.tree
-            .generate_decommitment(&self.queries, &mut self.channel);
+        let mut channel = self.channel.borrow_mut();
+        self.tree.generate_decommitment(&self.queries, &mut channel);
     }
 
     fn get_proof(&self) -> Vec<u8> {
-        self.channel.get_proof()
+        let channel = self.channel.borrow_mut();
+        channel.get_proof()
     }
 }
 
@@ -148,8 +150,8 @@ mod tests {
     ) {
         // Merkle Prover
         let channel_prng = PrngKeccak256::new();
-        let prover_channel: FSProverChannel<Felt252, PrngKeccak256, Sha3_256> =
-            FSProverChannel::new(channel_prng.clone());
+        let prover_channel: Rc<RefCell<FSProverChannel<Felt252, PrngKeccak256, Sha3_256>>> =
+            Rc::new(RefCell::new(FSProverChannel::new(channel_prng.clone())));
         let mut merkle_prover: MerkleCommitmentSchemeProver<
             Felt252,
             Keccak256Hasher<Felt252>,
