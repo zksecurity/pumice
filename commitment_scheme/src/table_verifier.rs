@@ -105,13 +105,103 @@ impl<F: PrimeField, P: Prng, W: Digest> TableVerifier<F, P, W> {
     }
 }
 
+// Tests to check completeness of TableProver and TableVerifier.
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{make_commitment_scheme_verifier, CommitmentHashes};
+    use crate::{
+        make_commitment_scheme_prover, make_commitment_scheme_verifier, table_prover::TableProver,
+        CommitmentHashes,
+    };
+    use channel::fs_prover_channel::FSProverChannel;
+    use channel::ProverChannel;
     use felt::Felt252;
     use randomness::keccak256::PrngKeccak256;
     use sha3::Sha3_256;
+
+    fn get_proof(
+        field_element_size: usize,
+        n_columns: usize,
+        n_segments: usize,
+        n_rows_per_segment: usize,
+        table_data: Vec<Vec<Felt252>>,
+        data_queries: &BTreeSet<RowCol>,
+        integrity_queries: &BTreeSet<RowCol>,
+    ) -> Vec<u8> {
+        let n_rows = n_rows_per_segment * n_segments;
+        let size_of_row = field_element_size * n_columns;
+
+        assert_eq!(table_data.len(), n_columns);
+
+        let mut segment_data: Vec<Vec<&[Felt252]>> = Vec::with_capacity(n_segments);
+
+        for i in 0..n_segments {
+            let mut segment: Vec<&[Felt252]> = Vec::with_capacity(n_columns);
+
+            for column in table_data.iter() {
+                let start = i * n_rows_per_segment;
+                let end = start + n_rows_per_segment;
+                let segment_slice = &column[start..end];
+                segment.push(segment_slice);
+            }
+
+            segment_data.push(segment);
+        }
+
+        let channel_prng = PrngKeccak256::new();
+        let prover_channel: Rc<RefCell<FSProverChannel<Felt252, PrngKeccak256, Sha3_256>>> =
+            Rc::new(RefCell::new(FSProverChannel::new(channel_prng)));
+
+        let commitment_hashes = CommitmentHashes::from_single_hash("blake2s256".to_string());
+
+        let commitment_scheme = make_commitment_scheme_prover(
+            size_of_row,
+            n_rows_per_segment,
+            n_segments,
+            prover_channel.clone(),
+            0,
+            commitment_hashes,
+            n_columns,
+            10,
+        );
+
+        let mut table_prover =
+            TableProver::new(n_columns, commitment_scheme, prover_channel.clone());
+
+        for (i, segment) in segment_data.iter().enumerate() {
+            let segment_slice: Vec<Vec<Felt252>> =
+                segment.iter().map(|slice| slice.to_vec()).collect();
+            table_prover.add_segment_for_commitment(&segment_slice, i, 1);
+        }
+
+        table_prover.commit();
+
+        let elements_idxs_for_decommitment =
+            table_prover.start_decommitment_phase(data_queries.clone(), integrity_queries.clone());
+
+        let mut elements_data: Vec<Vec<Felt252>> = Vec::with_capacity(n_columns);
+
+        for column in 0..n_columns {
+            let mut res: Vec<Felt252> = Vec::with_capacity(elements_idxs_for_decommitment.len());
+
+            for &row in &elements_idxs_for_decommitment {
+                assert!(row < n_rows, "Invalid row.");
+
+                let segment = row / n_rows_per_segment;
+                let index = row % n_rows_per_segment;
+
+                res.push(segment_data[segment][column][index].clone());
+            }
+
+            elements_data.push(res);
+        }
+
+        table_prover.decommit(&elements_data);
+
+        let prover_channel = prover_channel.borrow_mut();
+        let proof = prover_channel.get_proof();
+        proof
+    }
 
     fn test_table_verifier_with(
         field_element_size: usize,
@@ -123,15 +213,23 @@ mod tests {
         integrity_queries: &BTreeSet<RowCol>,
         table_data: Vec<Vec<Felt252>>,
     ) {
+        let proof = get_proof(
+            field_element_size,
+            n_columns,
+            n_segments,
+            n_rows_per_segment,
+            table_data.clone(),
+            data_queries,
+            integrity_queries,
+        );
+        assert_eq!(proof, exp_proof);
+
         let n_rows = n_rows_per_segment * n_segments;
         let size_of_row = field_element_size * n_columns;
 
         let channel_prng = PrngKeccak256::new();
         let verifier_channel: Rc<RefCell<FSVerifierChannel<Felt252, PrngKeccak256, Sha3_256>>> =
-            Rc::new(RefCell::new(FSVerifierChannel::new(
-                channel_prng,
-                exp_proof,
-            )));
+            Rc::new(RefCell::new(FSVerifierChannel::new(channel_prng, proof)));
         let commitment_hashes = CommitmentHashes::from_single_hash("blake2s256".to_string());
         let commitment_scheme = make_commitment_scheme_verifier(
             size_of_row,

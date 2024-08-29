@@ -1,6 +1,7 @@
 pub mod merkle;
 pub mod packaging_commitment_scheme;
 pub mod packer_hasher;
+pub mod table_prover;
 pub mod table_utils;
 pub mod table_verifier;
 use std::rc::Rc;
