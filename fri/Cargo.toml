@@ -5,7 +5,10 @@ edition = "2021"
 
 [dependencies]
 channel = { path = "../channel" }
+randomness = { path = "../randomness" }
+commitment_scheme = { path = "../commitment_scheme" }
 ark-ff.workspace = true
 ark-poly.workspace = true
 serde_json.workspace = true
 serde.workspace = true
+sha3.workspace = true

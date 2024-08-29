@@ -12,7 +12,7 @@ use std::rc::Rc;
 
 /// TableVerifierFactory is a function that creates an instance of TableVerifier.
 #[allow(dead_code)]
-type TableVerifierFactory<F, P, W> = fn(usize, usize) -> TableVerifier<F, P, W>;
+pub type TableVerifierFactory<F, P, W> = fn(usize, usize) -> TableVerifier<F, P, W>;
 
 pub struct TableVerifier<F: PrimeField, P: Prng, W: Digest> {
     n_columns: usize,
@@ -68,7 +68,7 @@ impl<F: PrimeField, P: Prng, W: Digest> TableVerifier<F, P, W> {
     /// Given indexed field elements, verify that these field elements are indeed the ones committed to
     /// by the prover, against the commitment obtained by read_commitment().
     #[allow(dead_code)]
-    fn verify_decommitment(&mut self, all_rows_data: &BTreeMap<RowCol, F>) -> Option<bool> {
+    pub fn verify_decommitment(&mut self, all_rows_data: &BTreeMap<RowCol, F>) -> Option<bool> {
         let mut integrity_map: BTreeMap<usize, Vec<u8>> = BTreeMap::new();
 
         let element_size = F::MODULUS_BIT_SIZE.div_ceil(8) as usize;
