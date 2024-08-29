@@ -13,6 +13,7 @@ macro_rules! keccak256 {
 
 const KECCAK256_DIGEST_NUM_BYTES: usize = 32;
 
+#[derive(Debug, Clone)]
 pub struct HashChain {
     digest: [u8; KECCAK256_DIGEST_NUM_BYTES],
     spare_bytes: [u8; KECCAK256_DIGEST_NUM_BYTES * 2],

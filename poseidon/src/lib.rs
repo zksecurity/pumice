@@ -8,14 +8,17 @@ use constants::{
     WIDTH, // total width of the state
 };
 
-use ark_ff::{BigInt, Field};
+use ark_ff::{BigInt, BigInteger, Field, PrimeField};
 use felt::Felt252;
+use hex::decode;
 use std::marker::PhantomData;
 
 pub trait FieldHasher<F: Field> {
     fn hash(input: &[F]) -> F;
 
     fn pair(left: F, right: F) -> F;
+
+    fn hash_bytes_to_field(bytes: &[u8]) -> F;
 }
 
 pub struct Poseidon3<F: Field> {
@@ -137,6 +140,53 @@ impl FieldHasher<Felt252> for Poseidon3<Felt252> {
         let st = Self::perm([left, right, PAD]);
         st[0]
     }
+
+    fn hash_bytes_to_field(bytes: &[u8]) -> Felt252 {
+        assert!(bytes.len() % 32 == 0);
+
+        let mut felts = Vec::new();
+
+        for chunk in bytes.chunks(32) {
+            felts.push(bytes_to_field(chunk))
+        }
+
+        Self::hash(&felts)
+    }
+}
+
+fn bytes_to_field(bytes: &[u8]) -> Felt252 {
+    let bits = {
+        let mut bits = Vec::new();
+        for byte in bytes {
+            for i in (0..8).rev() {
+                bits.push(byte & (1 << i) != 0);
+            }
+        }
+        bits
+    };
+    let big_int = <BigInt<4> as BigInteger>::from_bits_be(&bits);
+    assert!(big_int < Felt252::MODULUS);
+    Felt252::from_bigint(big_int).expect("conversion fail")
+}
+
+pub fn hex_to_vec(hex_str: &str) -> Vec<u8> {
+    let mut hex_str = String::from(hex_str);
+    let padding_length = 64_i32.saturating_sub(hex_str.len() as i32);
+    if padding_length > 0 {
+        let padding = "0".repeat(padding_length as usize);
+        hex_str.insert_str(0, &padding);
+    }
+    let mut bytes = decode(hex_str).unwrap();
+
+    let padding_length = 32_i32.saturating_sub(bytes.len() as i32);
+    if padding_length > 0 {
+        let mut padding = vec![0u8; padding_length as usize];
+        padding.append(&mut bytes);
+        bytes = padding;
+    }
+    assert_eq!(bytes.len(), 32);
+
+    bytes
 }
 
 #[test]
