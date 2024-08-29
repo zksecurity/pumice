@@ -44,6 +44,8 @@ impl<F: PrimeField> Hasher<F> for Blake2s256Hasher<F> {
     }
 
     fn node(input: &[Self::Output]) -> Self::Output {
+        assert_eq!(input.len(), 2);
+
         let mut hasher = Blake2s256::new();
         input.iter().for_each(|f| {
             assert_eq!(f.len(), Self::DIGEST_NUM_BYTES);
@@ -84,6 +86,8 @@ impl<F: PrimeField> Hasher<F> for Keccak256Hasher<F> {
     }
 
     fn node(input: &[Self::Output]) -> Self::Output {
+        assert_eq!(input.len(), 2);
+
         let mut hasher = Keccak256::new();
         input.iter().for_each(|f| {
             assert_eq!(f.len(), Self::DIGEST_NUM_BYTES);
@@ -150,6 +154,7 @@ impl<F: PrimeField> Hasher<F> for Poseidon3Hasher<F> {
     }
 }
 
+// MaskedHash implementation for Blake2s256Hasher and Keccak256Hasher
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MaskedHash<
     F: PrimeField,
@@ -160,6 +165,7 @@ pub struct MaskedHash<
     _ph: PhantomData<(F, H)>,
 }
 
+// Implement Hasher trait for MaskedHash
 impl<
         F: PrimeField,
         H: Hasher<F, Output = Vec<u8>>,
@@ -177,6 +183,7 @@ impl<
     }
 
     fn node(input: &[Self::Output]) -> Self::Output {
+        assert_eq!(input.len(), 2);
         let mut extended_input = Vec::new();
         for vec in input {
             extended_input.extend(vec);
@@ -197,7 +204,7 @@ impl<F: PrimeField, H: Hasher<F>, const NUM_EFFECTIVE_BYTES: usize, const IS_MSB
 {
     fn mask_hash(digest: &[u8]) -> Vec<u8> {
         let digest_bytes = H::DIGEST_NUM_BYTES;
-        let mut buffer = vec![0u8; digest_bytes]; // Initialize with zeros of the required size
+        let mut buffer = vec![0u8; digest_bytes];
 
         if IS_MSB {
             buffer[..NUM_EFFECTIVE_BYTES].copy_from_slice(&digest[..NUM_EFFECTIVE_BYTES]);
