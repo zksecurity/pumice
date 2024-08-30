@@ -78,18 +78,14 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>> MerkleTree<F, H> {
         }
     }
 
-    /// Retrieves the root of the tree assuming nodes at some depth are known.
+    /// Retrieves the root of the tree.
     ///
-    /// # Arguments
-    ///
-    /// - `min_depth_assumed_correct`: minimal depth (distance from the root) assumed to be correct.
     ///
     /// # Returns
     ///
     /// Returns the root of the tree.
-    pub fn get_root(&mut self, min_depth_assumed_correct: usize) -> H::Output {
-        assert!(min_depth_assumed_correct < self.nodes.len().ilog2() as usize);
-        let height_correct = 1 << min_depth_assumed_correct;
+    pub fn get_root(&mut self) -> H::Output {
+        let height_correct = self.data_length;
 
         for j in (1..height_correct).rev() {
             self.nodes[j] = H::node(&[self.nodes[2 * j].clone(), self.nodes[2 * j + 1].clone()]);
@@ -279,36 +275,33 @@ mod tests {
         F: PrimeField,
         H: Hasher<F, Output = Vec<u8>>,
     {
+        assert_eq!(data0.len(), data1.len());
         let mut tree = MerkleTree::<F, H>::new(data0.len());
 
         MerkleTree::add_data(&mut tree, data0, 0);
-        let root0 = tree.get_root(0);
+        let root0 = tree.get_root();
 
         MerkleTree::add_data(&mut tree, data1, 0);
-        let root1 = tree.get_root(0);
+        let root1 = tree.get_root();
 
         assert!(root0 != root1);
     }
 
-    fn test_root_diff_depths<F, H>(data0: &[H::Output], data1: &[H::Output], exp_root: H::Output)
+    fn test_root_compute<F, H>(data0: &[H::Output], data1: &[H::Output], exp_root: H::Output)
     where
         F: PrimeField,
         H: Hasher<F, Output = Vec<u8>>,
     {
-        let mut rng = rand::thread_rng();
         assert_eq!(data0.len(), data1.len());
-        let height = data0.len().ilog2() as usize + 1;
         let mut tree = MerkleTree::<F, H>::new(data0.len() * 2);
 
         MerkleTree::add_data(&mut tree, data0, 0);
         MerkleTree::add_data(&mut tree, data1, data0.len());
 
-        for _ in 0..20 {
-            let root0 = tree.get_root(rng.gen_range(1..=height));
-            let root1 = tree.get_root(rng.gen_range(1..=height));
-            assert_eq!(root0, root1);
-            assert_eq!(root0, exp_root);
-        }
+        let root0 = tree.get_root();
+        let root1 = tree.get_root();
+        assert_eq!(root0, root1);
+        assert_eq!(root0, exp_root);
     }
 
     #[test]
@@ -337,7 +330,7 @@ mod tests {
         let root_exp =
             hex_to_vec("b7a3cd28384b4baea480d070801106bf07f56f848acf271f6b6415ddc355f8e9");
         test_diff_tree_diff_root::<Felt252, Blake2s256Hasher<Felt252>>(&data0, &data1);
-        test_root_diff_depths::<Felt252, Blake2s256Hasher<Felt252>>(&data0, &data1, root_exp);
+        test_root_compute::<Felt252, Blake2s256Hasher<Felt252>>(&data0, &data1, root_exp);
 
         // test with Keccak256
         let data0 = [
@@ -363,7 +356,7 @@ mod tests {
         let root_exp =
             hex_to_vec("fba6d37293ad9845ff546e9615853594c47237ee666cf5267788e14e0032f3de");
         test_diff_tree_diff_root::<Felt252, Keccak256Hasher<Felt252>>(&data0, &data1);
-        test_root_diff_depths::<Felt252, Keccak256Hasher<Felt252>>(&data0, &data1, root_exp);
+        test_root_compute::<Felt252, Keccak256Hasher<Felt252>>(&data0, &data1, root_exp);
 
         // test with Poseidon3
         let data0 = [
@@ -381,7 +374,7 @@ mod tests {
         let root_exp =
             hex_to_vec("3a80041b3647dd472cb7979dc422e9b7d86d4bcd08b957a6ae05caf6c6e189b");
         test_diff_tree_diff_root::<Felt252, Poseidon3Hasher<Felt252>>(&data0, &data1);
-        test_root_diff_depths::<Felt252, Poseidon3Hasher<Felt252>>(&data0, &data1, root_exp);
+        test_root_compute::<Felt252, Poseidon3Hasher<Felt252>>(&data0, &data1, root_exp);
     }
 
     fn test_verify_true<F, H>(data: &[H::Output], root_exp: H::Output)
@@ -393,7 +386,7 @@ mod tests {
 
         let mut tree = MerkleTree::<F, H>::new(data.len());
         MerkleTree::add_data(&mut tree, data, 0);
-        let root = tree.get_root(0);
+        let root = tree.get_root();
         assert_eq!(root, root_exp);
 
         let num_queries = rng.gen_range(1..=data.len());
@@ -434,7 +427,7 @@ mod tests {
 
         let mut tree = MerkleTree::<F, H>::new(data.len());
         MerkleTree::add_data(&mut tree, data, 0);
-        let root = tree.get_root(0);
+        let root = tree.get_root();
         assert_eq!(root, root_exp);
 
         let prng = PrngKeccak256::new();

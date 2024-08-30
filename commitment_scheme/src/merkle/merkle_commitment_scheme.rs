@@ -65,10 +65,7 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> Commitme
     }
 
     fn commit(&mut self) {
-        let height = self.tree.data_length.ilog2() as usize;
-        let comm = self
-            .tree
-            .get_root(height - self.segment_length_in_elements().ilog2() as usize);
+        let comm = self.tree.get_root();
         let mut channel = self.channel.borrow_mut();
         let _ = channel.send_commit_hash(comm);
     }
