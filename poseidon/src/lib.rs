@@ -169,21 +169,14 @@ fn bytes_to_field(bytes: &[u8]) -> Felt252 {
     Felt252::from_bigint(big_int).expect("conversion fail")
 }
 
-pub fn hex_to_vec(hex_str: &str) -> Vec<u8> {
+pub fn hex_to_b32(hex_str: &str) -> Vec<u8> {
     let mut hex_str = String::from(hex_str);
     let padding_length = 64_i32.saturating_sub(hex_str.len() as i32);
     if padding_length > 0 {
         let padding = "0".repeat(padding_length as usize);
         hex_str.insert_str(0, &padding);
     }
-    let mut bytes = decode(hex_str).unwrap();
-
-    let padding_length = 32_i32.saturating_sub(bytes.len() as i32);
-    if padding_length > 0 {
-        let mut padding = vec![0u8; padding_length as usize];
-        padding.append(&mut bytes);
-        bytes = padding;
-    }
+    let bytes = decode(hex_str).unwrap();
     assert_eq!(bytes.len(), 32);
 
     bytes
@@ -192,19 +185,19 @@ pub fn hex_to_vec(hex_str: &str) -> Vec<u8> {
 #[test]
 fn test_poseidon3_hash_bytes() {
     let mut bytes = Vec::new();
-    bytes.extend(hex_to_vec(
+    bytes.extend(hex_to_b32(
         "6d841133e95d568a98362ae077545482f1b508cb48645f296de72f05f1e6afe",
     ));
-    bytes.extend(hex_to_vec(
+    bytes.extend(hex_to_b32(
         "23a4459537f5b7fa228d32336a00f9b241289e3c69fb3527e0614c4e77bb376",
     ));
-    bytes.extend(hex_to_vec(
+    bytes.extend(hex_to_b32(
         "7c187057c013dd3a6d8ce76683cd7875d236ca396204922122a10a77cef6f2a",
     ));
-    bytes.extend(hex_to_vec(
+    bytes.extend(hex_to_b32(
         "396f0205dbcda22900af19938d0607f8f9acc9c7a4c8d75fc19b5a1ede874b0",
     ));
-    bytes.extend(hex_to_vec(
+    bytes.extend(hex_to_b32(
         "48499957377c0df2c671fd1fcb6501b42fb63045ed8d16df08d55ab144e7ab8",
     ));
 
