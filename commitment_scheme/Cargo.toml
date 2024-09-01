@@ -13,6 +13,7 @@ felt = { path = "../felt" }
 channel = { path = "../channel" }
 randomness ={ path = "../randomness" }
 anyhow.workspace = true
+num-bigint.workspace = true
 
 [dev-dependencies]
 hex.workspace = true 

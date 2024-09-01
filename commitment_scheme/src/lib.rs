@@ -60,7 +60,10 @@ pub trait CommitmentSchemeVerifier {
     fn read_commitment(&mut self) -> Result<(), anyhow::Error>;
 
     // Verify the integrity of the data
-    fn verify_integrity(&mut self, elements_to_verify: BTreeMap<usize, Vec<u8>>) -> Option<bool>;
+    fn verify_integrity(
+        &mut self,
+        elements_to_verify: BTreeMap<usize, Vec<u8>>,
+    ) -> Result<bool, Error>;
 
     // Return the total number of elements in the current layer
     fn num_of_elements(&self) -> usize;

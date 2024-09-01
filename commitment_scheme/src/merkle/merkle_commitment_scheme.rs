@@ -41,7 +41,7 @@ impl<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> MerkleCommitmentSchemeProv
     }
 }
 
-impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> CommitmentSchemeProver
+impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest> CommitmentSchemeProver
     for MerkleCommitmentSchemeProver<F, H, P, W>
 {
     fn num_segments(&self) -> usize {
@@ -105,19 +105,35 @@ impl<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> MerkleCommitmentSchemeVeri
     }
 }
 
-impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> CommitmentSchemeVerifier
+impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest> CommitmentSchemeVerifier
     for MerkleCommitmentSchemeVerifier<F, H, P, W>
 {
     fn read_commitment(&mut self) -> Result<(), anyhow::Error> {
         let mut channel = self.channel.borrow_mut();
-        self.comm = channel.recv_commit_hash(H::DIGEST_NUM_BYTES)?;
+        let comm_vec = channel.recv_commit_hash(H::DIGEST_NUM_BYTES)?;
+        assert_eq!(comm_vec.len(), 32);
+        let mut comm_bytes = [0u8; 32];
+        comm_bytes.copy_from_slice(&comm_vec);
+        self.comm = comm_bytes;
         Ok(())
     }
 
-    fn verify_integrity(&mut self, elements_to_verify: BTreeMap<usize, Vec<u8>>) -> Option<bool> {
+    fn verify_integrity(
+        &mut self,
+        elements_to_verify: BTreeMap<usize, Vec<u8>>,
+    ) -> Result<bool, Error> {
         let mut channel = self.channel.borrow_mut();
+        let elements_to_verify = elements_to_verify
+            .iter()
+            .map(|(i, v)| {
+                assert_eq!(v.len(), 32);
+                let mut bytes = [0u8; 32];
+                bytes.copy_from_slice(v);
+                (*i, bytes)
+            })
+            .collect();
         MerkleTree::<F, H>::verify_decommitment(
-            self.comm.clone(),
+            self.comm,
             self.n_elements,
             &elements_to_verify,
             &mut channel,

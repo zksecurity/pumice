@@ -1,6 +1,7 @@
 use crate::merkle::hash::Hasher;
 use crate::packer_hasher::PackerHasher;
 use crate::{CommitmentSchemeProver, CommitmentSchemeVerifier};
+use anyhow::Error;
 use ark_ff::PrimeField;
 use channel::fs_prover_channel::FSProverChannel;
 use channel::fs_verifier_channel::FSVerifierChannel;
@@ -34,7 +35,7 @@ pub struct PackagingCommitmentSchemeProver<F: PrimeField, H: Hasher<F>, P: Prng,
 }
 
 #[allow(dead_code)]
-impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
+impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
     PackagingCommitmentSchemeProver<F, H, P, W>
 {
     pub fn new(
@@ -101,7 +102,7 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
     }
 }
 
-impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> CommitmentSchemeProver
+impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest> CommitmentSchemeProver
     for PackagingCommitmentSchemeProver<F, H, P, W>
 {
     fn element_length_in_bytes(&self) -> usize {
@@ -214,7 +215,7 @@ pub struct PackagingCommitmentSchemeVerifier<F: PrimeField, H: Hasher<F>, P: Prn
 }
 
 #[allow(dead_code)]
-impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
+impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
     PackagingCommitmentSchemeVerifier<F, H, P, W>
 {
     /// Constructs a new PackagingCommitmentSchemeVerifier using the commitment scheme factory input.
@@ -321,7 +322,7 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest>
 }
 
 /// Implement CommitmentSchemeVerifier trait for PackagingCommitmentSchemeVerifier
-impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> CommitmentSchemeVerifier
+impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest> CommitmentSchemeVerifier
     for PackagingCommitmentSchemeVerifier<F, H, P, W>
 {
     fn num_of_elements(&self) -> usize {
@@ -332,7 +333,10 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> Commitme
         self.inner_commitment_scheme.read_commitment()
     }
 
-    fn verify_integrity(&mut self, elements_to_verify: BTreeMap<usize, Vec<u8>>) -> Option<bool> {
+    fn verify_integrity(
+        &mut self,
+        elements_to_verify: BTreeMap<usize, Vec<u8>>,
+    ) -> Result<bool, Error> {
         // Get missing elements required to compute hashes
         let keys: BTreeSet<usize> = elements_to_verify.keys().copied().collect();
         let missing_elements_idxs = self.packer.elements_required_to_compute_hashes(&keys);
@@ -342,11 +346,11 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> Commitme
         for &missing_element_idx in &missing_elements_idxs {
             if self.is_merkle_layer {
                 let mut channel = self.channel.borrow_mut();
-                let result_array = channel.recv_decommit_node(H::DIGEST_NUM_BYTES).ok()?;
+                let result_array = channel.recv_decommit_node(H::DIGEST_NUM_BYTES)?;
                 full_data_to_verify.insert(missing_element_idx, result_array.to_vec());
             } else {
                 let mut channel = self.channel.borrow_mut();
-                let data = channel.recv_data(self.size_of_element).ok()?;
+                let data = channel.recv_data(self.size_of_element)?;
                 full_data_to_verify.insert(missing_element_idx, data);
             }
         }

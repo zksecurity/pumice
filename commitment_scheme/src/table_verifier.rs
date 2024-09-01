@@ -1,6 +1,6 @@
 use crate::table_utils::{all_query_rows, elements_to_be_transmitted, RowCol};
 use crate::CommitmentSchemeVerifier;
-use anyhow::Ok;
+use anyhow::{Error, Ok};
 use ark_ff::{BigInteger, PrimeField};
 use channel::fs_verifier_channel::FSVerifierChannel;
 use channel::VerifierChannel;
@@ -68,7 +68,7 @@ impl<F: PrimeField, P: Prng, W: Digest> TableVerifier<F, P, W> {
     /// Given indexed field elements, verify that these field elements are indeed the ones committed to
     /// by the prover, against the commitment obtained by read_commitment().
     #[allow(dead_code)]
-    fn verify_decommitment(&mut self, all_rows_data: &BTreeMap<RowCol, F>) -> Option<bool> {
+    fn verify_decommitment(&mut self, all_rows_data: &BTreeMap<RowCol, F>) -> Result<bool, Error> {
         let mut integrity_map: BTreeMap<usize, Vec<u8>> = BTreeMap::new();
 
         let element_size = F::MODULUS_BIT_SIZE.div_ceil(8) as usize;

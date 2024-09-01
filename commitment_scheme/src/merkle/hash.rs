@@ -1,6 +1,7 @@
 use ark_ff::{BigInteger, PrimeField};
 use blake2::{Blake2s256, Digest};
 use felt::Felt252;
+use num_bigint::BigUint;
 use poseidon::{FieldHasher, Poseidon3};
 use sha3::Keccak256;
 use std::{fmt::Debug, marker::PhantomData};
@@ -14,10 +15,24 @@ pub trait Hasher<F: PrimeField> {
     type Output: Clone + Eq + Default + Debug + AsRef<[u8]>;
 
     // compress a list of internal nodes into a single internal node
-    fn node(input: &[Self::Output]) -> Self::Output;
+    fn node(input: &[Self::Output]) -> Self::Output {
+        assert_eq!(input.len(), 2);
+        assert_eq!(input[0].as_ref().len(), 32);
+        assert_eq!(input[1].as_ref().len(), 32);
+        let mut combined = Vec::with_capacity(64);
+        combined.extend_from_slice(input[0].as_ref());
+        combined.extend_from_slice(input[1].as_ref());
+        Self::hash_bytes(&combined)
+    }
 
     // compress a list of leaves into a single leaf
-    fn leaf(input: &[F]) -> Self::Output;
+    fn leaf(input: &[F]) -> Self::Output {
+        let input_bytes: Vec<u8> = input
+            .iter()
+            .flat_map(|f| f.into_bigint().to_bytes_be())
+            .collect();
+        Self::hash_bytes(&input_bytes)
+    }
 
     // compress a list of bytes into a single internal node
     fn hash_bytes(data: &[u8]) -> Self::Output;
@@ -31,37 +46,12 @@ pub struct Blake2s256Hasher<F: PrimeField> {
 impl<F: PrimeField> Hasher<F> for Blake2s256Hasher<F> {
     const DIGEST_NUM_BYTES: usize = 32;
 
-    type Output = Vec<u8>;
-
-    fn leaf(input: &[F]) -> Self::Output {
-        let mut hasher = Blake2s256::new();
-        input
-            .iter()
-            .for_each(|f| hasher.update(f.into_bigint().to_bytes_be()));
-        let hash = hasher.finalize().to_vec();
-        assert_eq!(hash.len(), Self::DIGEST_NUM_BYTES);
-        hash
-    }
-
-    fn node(input: &[Self::Output]) -> Self::Output {
-        assert_eq!(input.len(), 2);
-
-        let mut hasher = Blake2s256::new();
-        input.iter().for_each(|f| {
-            assert_eq!(f.len(), Self::DIGEST_NUM_BYTES);
-            hasher.update(f)
-        });
-        let hash = hasher.finalize().to_vec();
-        assert_eq!(hash.len(), Self::DIGEST_NUM_BYTES);
-        hash
-    }
+    type Output = [u8; 32];
 
     fn hash_bytes(data: &[u8]) -> Self::Output {
         let mut hasher = Blake2s256::new();
         hasher.update(data);
-        let hash = hasher.finalize().to_vec();
-        assert_eq!(hash.len(), Self::DIGEST_NUM_BYTES);
-        hash
+        hasher.finalize().into()
     }
 }
 
@@ -73,37 +63,12 @@ pub struct Keccak256Hasher<F: PrimeField> {
 impl<F: PrimeField> Hasher<F> for Keccak256Hasher<F> {
     const DIGEST_NUM_BYTES: usize = 32;
 
-    type Output = Vec<u8>;
-
-    fn leaf(input: &[F]) -> Self::Output {
-        let mut hasher = Keccak256::new();
-        input
-            .iter()
-            .for_each(|f| hasher.update(f.into_bigint().to_bytes_be()));
-        let hash = hasher.finalize().to_vec();
-        assert_eq!(hash.len(), Self::DIGEST_NUM_BYTES);
-        hash
-    }
-
-    fn node(input: &[Self::Output]) -> Self::Output {
-        assert_eq!(input.len(), 2);
-
-        let mut hasher = Keccak256::new();
-        input.iter().for_each(|f| {
-            assert_eq!(f.len(), Self::DIGEST_NUM_BYTES);
-            hasher.update(f)
-        });
-        let hash = hasher.finalize().to_vec();
-        assert_eq!(hash.len(), Self::DIGEST_NUM_BYTES);
-        hash
-    }
+    type Output = [u8; 32];
 
     fn hash_bytes(data: &[u8]) -> Self::Output {
         let mut hasher = Keccak256::new();
         hasher.update(data);
-        let hash = hasher.finalize().to_vec();
-        assert_eq!(hash.len(), Self::DIGEST_NUM_BYTES);
-        hash
+        hasher.finalize().into()
     }
 }
 
@@ -115,7 +80,7 @@ pub struct Poseidon3Hasher<F: PrimeField> {
 impl<F: PrimeField> Hasher<F> for Poseidon3Hasher<F> {
     const DIGEST_NUM_BYTES: usize = 32;
 
-    type Output = Vec<u8>;
+    type Output = [u8; 32];
 
     fn leaf(input: &[F]) -> Self::Output {
         let input_felts: Vec<Felt252> = input
@@ -129,18 +94,23 @@ impl<F: PrimeField> Hasher<F> for Poseidon3Hasher<F> {
 
         let mut array = [0u8; 32];
         array[..hash.len()].copy_from_slice(&hash);
-        array.to_vec()
+        array
     }
 
     fn node(input: &[Self::Output]) -> Self::Output {
         assert_eq!(input.len(), 2);
-        let input0 = Felt252::from_be_bytes_mod_order(&input[0]);
-        let input1 = Felt252::from_be_bytes_mod_order(&input[1]);
+        let input0_int = BigUint::from_bytes_be(&input[0]);
+        let input1_int = BigUint::from_bytes_be(&input[1]);
+        assert!(input0_int < F::MODULUS.into());
+        assert!(input1_int < F::MODULUS.into());
+
+        let input0 = input0_int.into();
+        let input1 = input1_int.into();
         let hash = Poseidon3::pair(input0, input1).into_bigint().to_bytes_be();
 
         let mut array = [0u8; 32];
         array[..hash.len()].copy_from_slice(&hash);
-        array.to_vec()
+        array
     }
 
     fn hash_bytes(data: &[u8]) -> Self::Output {
@@ -150,7 +120,7 @@ impl<F: PrimeField> Hasher<F> for Poseidon3Hasher<F> {
 
         let mut array = [0u8; 32];
         array[..hash.len()].copy_from_slice(&hash);
-        array.to_vec()
+        array
     }
 }
 
@@ -168,30 +138,14 @@ pub struct MaskedHash<
 // Implement Hasher trait for MaskedHash
 impl<
         F: PrimeField,
-        H: Hasher<F, Output = Vec<u8>>,
+        H: Hasher<F, Output = [u8; 32]>,
         const NUM_EFFECTIVE_BYTES: usize,
         const IS_MSB: bool,
     > Hasher<F> for MaskedHash<F, H, NUM_EFFECTIVE_BYTES, IS_MSB>
 {
     const DIGEST_NUM_BYTES: usize = H::DIGEST_NUM_BYTES;
 
-    type Output = Vec<u8>;
-
-    fn leaf(input: &[F]) -> Self::Output {
-        let hash = H::leaf(input);
-        Self::mask_hash(&hash)
-    }
-
-    fn node(input: &[Self::Output]) -> Self::Output {
-        assert_eq!(input.len(), 2);
-        let mut extended_input = Vec::new();
-        for vec in input {
-            extended_input.extend(vec);
-        }
-
-        let hash = H::hash_bytes(&extended_input);
-        Self::mask_hash(&hash)
-    }
+    type Output = [u8; 32];
 
     fn hash_bytes(data: &[u8]) -> Self::Output {
         let hash = H::hash_bytes(data);
@@ -202,14 +156,13 @@ impl<
 impl<F: PrimeField, H: Hasher<F>, const NUM_EFFECTIVE_BYTES: usize, const IS_MSB: bool>
     MaskedHash<F, H, NUM_EFFECTIVE_BYTES, IS_MSB>
 {
-    fn mask_hash(digest: &[u8]) -> Vec<u8> {
-        let digest_bytes = H::DIGEST_NUM_BYTES;
-        let mut buffer = vec![0u8; digest_bytes];
+    fn mask_hash(digest: &[u8]) -> [u8; 32] {
+        let mut buffer = [0u8; 32];
 
         if IS_MSB {
             buffer[..NUM_EFFECTIVE_BYTES].copy_from_slice(&digest[..NUM_EFFECTIVE_BYTES]);
         } else {
-            buffer[digest_bytes - NUM_EFFECTIVE_BYTES..]
+            buffer[32 - NUM_EFFECTIVE_BYTES..]
                 .copy_from_slice(&digest[digest.len() - NUM_EFFECTIVE_BYTES..]);
         }
 
@@ -223,7 +176,7 @@ mod tests {
     use felt::Felt252;
 
     use super::{Hasher, Keccak256Hasher, MaskedHash};
-    use crate::merkle::tests::hex_to_vec;
+    use crate::merkle::tests::hex_to_b32;
 
     fn as_masked(data: Vec<u8>, is_msb: bool, mask_bytes: usize) -> Vec<u8> {
         assert!(data.len() >= mask_bytes);
@@ -249,8 +202,8 @@ mod tests {
     #[test]
     fn test_masked_hash() {
         let hash = MaskedKeccak20True::hash_bytes(&[]);
-        let exp = hex_to_vec("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
-        assert_eq!(hash, as_masked(exp, true, 20));
+        let exp = hex_to_b32("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
+        assert_eq!(hash.to_vec(), as_masked(exp.to_vec(), true, 20));
 
         let testing_string = b"testing";
         let expected_hash: [u8; 32] = [
@@ -259,7 +212,7 @@ mod tests {
             0xdf, 0x9d, 0x1b, 0x02,
         ];
         let hash = MaskedKeccak20True::hash_bytes(testing_string);
-        assert_eq!(hash, as_masked(expected_hash.to_vec(), true, 20));
+        assert_eq!(hash.to_vec(), as_masked(expected_hash.to_vec(), true, 20));
 
         let testing_string = b"testing";
         let h1 = MaskedKeccak20True::hash_bytes(testing_string);
