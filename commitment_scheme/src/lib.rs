@@ -13,6 +13,7 @@ use std::{
 
 use crate::merkle::hash::MaskedHash;
 use crate::packer_hasher::PackerHasher;
+use anyhow::Error;
 use ark_ff::PrimeField;
 use channel::{fs_prover_channel::FSProverChannel, fs_verifier_channel::FSVerifierChannel};
 use merkle::hash::Poseidon3Hasher;
@@ -41,7 +42,7 @@ pub trait CommitmentSchemeProver {
     fn add_segment_for_commitment(&mut self, segment_data: &[u8], segment_index: usize);
 
     // Commit to the data
-    fn commit(&mut self);
+    fn commit(&mut self) -> Result<(), Error>;
 
     // Start the decommitment phase
     fn start_decommitment_phase(&mut self, queries: BTreeSet<usize>) -> Vec<usize>;

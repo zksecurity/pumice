@@ -2,7 +2,7 @@ use crate::{
     merkle::{bytes_as_hash, Hasher},
     CommitmentSchemeProver, CommitmentSchemeVerifier,
 };
-use anyhow::Ok;
+use anyhow::{Error, Ok};
 use ark_ff::PrimeField;
 use channel::{
     fs_prover_channel::FSProverChannel, fs_verifier_channel::FSVerifierChannel, ProverChannel,
@@ -64,10 +64,11 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> Commitme
         );
     }
 
-    fn commit(&mut self) {
+    fn commit(&mut self) -> Result<(), Error> {
         let comm = self.tree.get_root();
         let mut channel = self.channel.borrow_mut();
-        let _ = channel.send_commit_hash(comm);
+        channel.send_commit_hash(comm)?;
+        Ok(())
     }
 
     fn start_decommitment_phase(&mut self, queries: BTreeSet<usize>) -> Vec<usize> {
@@ -162,7 +163,7 @@ mod tests {
             };
             merkle_prover.add_segment_for_commitment(segment, i);
         }
-        merkle_prover.commit();
+        merkle_prover.commit().unwrap();
         let element_idxs = merkle_prover.start_decommitment_phase(queries);
         let elements_data: Vec<u8> = element_idxs
             .iter()

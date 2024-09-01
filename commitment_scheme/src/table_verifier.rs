@@ -174,7 +174,7 @@ mod tests {
             table_prover.add_segment_for_commitment(&segment_slice, i, 1);
         }
 
-        table_prover.commit();
+        table_prover.commit().unwrap();
 
         let elements_idxs_for_decommitment =
             table_prover.start_decommitment_phase(data_queries.clone(), integrity_queries.clone());

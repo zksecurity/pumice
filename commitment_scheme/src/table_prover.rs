@@ -55,7 +55,7 @@ impl<F: PrimeField, P: Prng, W: Digest> TableProver<F, P, W> {
             .add_segment_for_commitment(&serialize_field_columns(segment), segment_idx);
     }
 
-    pub fn commit(&mut self) {
+    pub fn commit(&mut self) -> Result<(), anyhow::Error> {
         self.commitment_scheme.commit()
     }
 

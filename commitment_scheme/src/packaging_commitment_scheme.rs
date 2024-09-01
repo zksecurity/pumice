@@ -129,7 +129,7 @@ impl<F: PrimeField, H: Hasher<F, Output = Vec<u8>>, P: Prng, W: Digest> Commitme
             .add_segment_for_commitment(&packed, segment_index);
     }
 
-    fn commit(&mut self) {
+    fn commit(&mut self) -> Result<(), anyhow::Error> {
         self.inner_commitment_scheme.commit()
     }
 
@@ -404,7 +404,7 @@ mod tests {
             };
             prover.add_segment_for_commitment(segment, i);
         }
-        prover.commit();
+        prover.commit().unwrap();
         let element_idxs = prover.start_decommitment_phase(queries);
         let elements_data: Vec<u8> = element_idxs
             .iter()
