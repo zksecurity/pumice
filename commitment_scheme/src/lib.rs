@@ -370,7 +370,6 @@ where
     next_inner_layer
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn make_commitment_scheme_prover<F, P, W>(
     size_of_element: usize,
     n_elements_in_segment: usize,
