@@ -22,6 +22,8 @@ use packaging_commitment_scheme::{
 };
 use randomness::Prng;
 use sha3::Digest;
+use std::fmt;
+use std::str::FromStr;
 
 // Define the CommitmentSchemeProver trait
 pub trait CommitmentSchemeProver<F: PrimeField, P: Prng, W: Digest> {
@@ -76,13 +78,13 @@ pub trait CommitmentSchemeVerifier<F: PrimeField, P: Prng, W: Digest> {
 // Commitment hashes containing top and bottom hash strings
 #[derive(Debug, Clone)]
 pub struct CommitmentHashes {
-    top_hash: String,
-    bottom_hash: String,
+    top_hash: SupportedHashes,
+    bottom_hash: SupportedHashes,
 }
 
 impl CommitmentHashes {
     // Constructor taking two hashes
-    pub fn new(top_hash: String, bottom_hash: String) -> Self {
+    pub fn new(top_hash: SupportedHashes, bottom_hash: SupportedHashes) -> Self {
         Self {
             top_hash,
             bottom_hash,
@@ -90,17 +92,63 @@ impl CommitmentHashes {
     }
 
     // Constructor taking a single hash and using it for both top and bottom
-    pub fn from_single_hash(hash: String) -> Self {
+    pub fn from_single_hash(hash: SupportedHashes) -> Self {
         Self::new(hash.clone(), hash)
     }
 
     // Method to get the hash name based on `is_top_hash_layer`
-    fn get_hash_name(&self, is_top_hash_layer: bool) -> &String {
+    fn get_hash_name(&self, is_top_hash_layer: bool) -> &SupportedHashes {
         if is_top_hash_layer {
             &self.top_hash
         } else {
             &self.bottom_hash
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SupportedHashes {
+    Keccak256,
+    Keccak256Masked160Msb,
+    Keccak256Masked160Lsb,
+    Blake2s256,
+    Blake2s256Masked160Msb,
+    Blake2s256Masked160Lsb,
+    Poseidon3,
+}
+
+impl FromStr for SupportedHashes {
+    type Err = String;
+
+    fn from_str(hash: &str) -> Result<Self, Self::Err> {
+        match hash.to_lowercase().as_str() {
+            "keccak256" => Ok(SupportedHashes::Keccak256),
+            "keccak256_masked160_msb" => Ok(SupportedHashes::Keccak256Masked160Msb),
+            "keccak256_masked160_lsb" => Ok(SupportedHashes::Keccak256Masked160Lsb),
+            "blake2s256" => Ok(SupportedHashes::Blake2s256),
+            "blake2s256_masked160_msb" => Ok(SupportedHashes::Blake2s256Masked160Msb),
+            "blake2s256_masked160_lsb" => Ok(SupportedHashes::Blake2s256Masked160Lsb),
+            "poseidon3" => Ok(SupportedHashes::Poseidon3),
+            _ => Err(format!("Unsupported hash type: {}", hash)),
+        }
+    }
+}
+
+impl fmt::Display for SupportedHashes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                SupportedHashes::Keccak256 => "keccak256",
+                SupportedHashes::Keccak256Masked160Msb => "keccak256_masked160_msb",
+                SupportedHashes::Keccak256Masked160Lsb => "keccak256_masked160_lsb",
+                SupportedHashes::Blake2s256 => "blake2s256",
+                SupportedHashes::Blake2s256Masked160Msb => "blake2s256_masked160_msb",
+                SupportedHashes::Blake2s256Masked160Lsb => "blake2s256_masked160_lsb",
+                SupportedHashes::Poseidon3 => "poseidon3",
+            }
+        )
     }
 }
 
@@ -146,56 +194,40 @@ where
     // Create the innermost layer which holds the Merkle Tree.
     let is_verifier_friendly_layer = n_verifier_friendly_commitment_layers > 0;
     let hash_name = commitment_hashes.get_hash_name(is_verifier_friendly_layer);
-    let mut next_inner_layer: Box<dyn CommitmentSchemeProver<F, P, W>>;
-    match hash_name.as_str() {
-        "keccak256" => {
-            next_inner_layer = Box::new(
-                MerkleCommitmentSchemeProver::<F, Keccak256Hasher<F>, P, W>::new(n_segments),
-            )
+    let mut next_inner_layer: Box<dyn CommitmentSchemeProver<F, P, W>> = match hash_name {
+        SupportedHashes::Keccak256 => {
+            Box::new(MerkleCommitmentSchemeProver::<F, Keccak256Hasher<F>, P, W>::new(n_segments))
         }
-        "keccak256_masked160_msb" => {
-            next_inner_layer = Box::new(MerkleCommitmentSchemeProver::<
-                F,
-                MaskedHash<F, Keccak256Hasher<F>, 20, true>,
-                P,
-                W,
-            >::new(n_segments))
+        SupportedHashes::Keccak256Masked160Msb => Box::new(MerkleCommitmentSchemeProver::<
+            F,
+            MaskedHash<F, Keccak256Hasher<F>, 20, true>,
+            P,
+            W,
+        >::new(n_segments)),
+        SupportedHashes::Keccak256Masked160Lsb => Box::new(MerkleCommitmentSchemeProver::<
+            F,
+            MaskedHash<F, Keccak256Hasher<F>, 20, false>,
+            P,
+            W,
+        >::new(n_segments)),
+        SupportedHashes::Blake2s256 => {
+            Box::new(MerkleCommitmentSchemeProver::<F, Blake2s256Hasher<F>, P, W>::new(n_segments))
         }
-        "keccak256_masked160_lsb" => {
-            next_inner_layer = Box::new(MerkleCommitmentSchemeProver::<
-                F,
-                MaskedHash<F, Keccak256Hasher<F>, 20, false>,
-                P,
-                W,
-            >::new(n_segments))
+        SupportedHashes::Blake2s256Masked160Msb => Box::new(MerkleCommitmentSchemeProver::<
+            F,
+            MaskedHash<F, Blake2s256Hasher<F>, 20, true>,
+            P,
+            W,
+        >::new(n_segments)),
+        SupportedHashes::Blake2s256Masked160Lsb => Box::new(MerkleCommitmentSchemeProver::<
+            F,
+            MaskedHash<F, Blake2s256Hasher<F>, 20, false>,
+            P,
+            W,
+        >::new(n_segments)),
+        SupportedHashes::Poseidon3 => {
+            Box::new(MerkleCommitmentSchemeProver::<F, Poseidon3Hasher<F>, P, W>::new(n_segments))
         }
-        "blake2s256" => {
-            next_inner_layer = Box::new(
-                MerkleCommitmentSchemeProver::<F, Blake2s256Hasher<F>, P, W>::new(n_segments),
-            )
-        }
-        "blake2s256_masked160_msb" => {
-            next_inner_layer = Box::new(MerkleCommitmentSchemeProver::<
-                F,
-                MaskedHash<F, Blake2s256Hasher<F>, 20, true>,
-                P,
-                W,
-            >::new(n_segments))
-        }
-        "blake2s256_masked160_lsb" => {
-            next_inner_layer = Box::new(MerkleCommitmentSchemeProver::<
-                F,
-                MaskedHash<F, Blake2s256Hasher<F>, 20, false>,
-                P,
-                W,
-            >::new(n_segments))
-        }
-        "poseidon3" => {
-            next_inner_layer = Box::new(
-                MerkleCommitmentSchemeProver::<F, Poseidon3Hasher<F>, P, W>::new(n_segments),
-            )
-        }
-        &_ => unreachable!(),
     };
 
     let n_layers_in_segment = n_elements_in_segment.ilog2() as usize;
@@ -224,8 +256,8 @@ where
         let is_verifier_friendly_layer = layer < n_verifier_friendly_layers_in_segment;
 
         let hash_name = commitment_hashes.get_hash_name(is_verifier_friendly_layer);
-        match hash_name.as_str() {
-            "keccak256" => {
+        match hash_name {
+            SupportedHashes::Keccak256 => {
                 let packer = PackerHasher::new(32, n_segments * cur_n_elements_in_segment);
                 next_inner_layer =
                     Box::new(
@@ -239,7 +271,7 @@ where
                         ),
                     )
             }
-            "keccak256_masked160_msb" => {
+            SupportedHashes::Keccak256Masked160Msb => {
                 let packer = PackerHasher::new(32, n_segments * cur_n_elements_in_segment);
                 next_inner_layer = Box::new(PackagingCommitmentSchemeProver::<
                     F,
@@ -255,7 +287,7 @@ where
                     true,
                 ))
             }
-            "keccak256_masked160_lsb" => {
+            SupportedHashes::Keccak256Masked160Lsb => {
                 let packer = PackerHasher::new(32, n_segments * cur_n_elements_in_segment);
                 next_inner_layer = Box::new(PackagingCommitmentSchemeProver::<
                     F,
@@ -271,7 +303,7 @@ where
                     true,
                 ))
             }
-            "blake2s256" => {
+            SupportedHashes::Blake2s256 => {
                 let packer = PackerHasher::new(32, n_segments * cur_n_elements_in_segment);
                 next_inner_layer = Box::new(PackagingCommitmentSchemeProver::<
                     F,
@@ -287,7 +319,7 @@ where
                     true,
                 ))
             }
-            "blake2s256_masked160_msb" => {
+            SupportedHashes::Blake2s256Masked160Msb => {
                 let packer = PackerHasher::new(32, n_segments * cur_n_elements_in_segment);
                 next_inner_layer = Box::new(PackagingCommitmentSchemeProver::<
                     F,
@@ -303,7 +335,7 @@ where
                     true,
                 ))
             }
-            "blake2s256_masked160_lsb" => {
+            SupportedHashes::Blake2s256Masked160Lsb => {
                 let packer = PackerHasher::new(32, n_segments * cur_n_elements_in_segment);
                 next_inner_layer = Box::new(PackagingCommitmentSchemeProver::<
                     F,
@@ -319,7 +351,7 @@ where
                     true,
                 ))
             }
-            "poseidon3" => {
+            SupportedHashes::Poseidon3 => {
                 let packer = PackerHasher::new(32, n_segments * cur_n_elements_in_segment);
                 next_inner_layer =
                     Box::new(
@@ -333,7 +365,6 @@ where
                         ),
                     )
             }
-            &_ => unreachable!(),
         };
     }
     next_inner_layer
@@ -368,8 +399,8 @@ where
     let commitment_hashes_cloned = commitment_hashes.clone();
     let hash_name = commitment_hashes_cloned.get_hash_name(is_verifier_friendly_layer);
 
-    let commitment_scheme: Box<dyn CommitmentSchemeProver<F, P, W>> = match hash_name.as_str() {
-        "keccak256" => {
+    let commitment_scheme: Box<dyn CommitmentSchemeProver<F, P, W>> = match hash_name {
+        SupportedHashes::Keccak256 => {
             let packer = PackerHasher::new(size_of_element, n_segments * n_elements_in_segment);
             let inner_commitment_scheme = create_all_commitment_scheme_layers(
                 packer.n_packages / n_segments,
@@ -388,7 +419,7 @@ where
                 ),
             )
         }
-        "keccak256_masked160_msb" => {
+        SupportedHashes::Keccak256Masked160Msb => {
             let packer = PackerHasher::new(size_of_element, n_segments * n_elements_in_segment);
             let inner_commitment_scheme = create_all_commitment_scheme_layers(
                 packer.n_packages / n_segments,
@@ -410,7 +441,7 @@ where
                 false,
             ))
         }
-        "keccak256_masked160_lsb" => {
+        SupportedHashes::Keccak256Masked160Lsb => {
             let packer = PackerHasher::new(size_of_element, n_segments * n_elements_in_segment);
             let inner_commitment_scheme = create_all_commitment_scheme_layers(
                 packer.n_packages / n_segments,
@@ -432,7 +463,7 @@ where
                 false,
             ))
         }
-        "blake2s256" => {
+        SupportedHashes::Blake2s256 => {
             let packer = PackerHasher::new(size_of_element, n_segments * n_elements_in_segment);
             let inner_commitment_scheme = create_all_commitment_scheme_layers(
                 packer.n_packages / n_segments,
@@ -454,7 +485,7 @@ where
                 false,
             ))
         }
-        "blake2s256_masked160_msb" => {
+        SupportedHashes::Blake2s256Masked160Msb => {
             let packer = PackerHasher::new(size_of_element, n_segments * n_elements_in_segment);
             let inner_commitment_scheme = create_all_commitment_scheme_layers(
                 packer.n_packages / n_segments,
@@ -476,7 +507,7 @@ where
                 false,
             ))
         }
-        "blake2s256_masked160_lsb" => {
+        SupportedHashes::Blake2s256Masked160Lsb => {
             let packer = PackerHasher::new(size_of_element, n_segments * n_elements_in_segment);
             let inner_commitment_scheme = create_all_commitment_scheme_layers(
                 packer.n_packages / n_segments,
@@ -498,7 +529,7 @@ where
                 false,
             ))
         }
-        "poseidon3" => {
+        SupportedHashes::Poseidon3 => {
             let packer = PackerHasher::new(size_of_element, n_segments * n_elements_in_segment);
             let inner_commitment_scheme = create_all_commitment_scheme_layers(
                 packer.n_packages / n_segments,
@@ -518,7 +549,6 @@ where
                 ),
             )
         }
-        &_ => unreachable!(),
     };
 
     commitment_scheme
@@ -554,70 +584,55 @@ where
     let is_top_hash = n_verifier_friendly_layers > 0;
     let hash_name = commitment_hashes.get_hash_name(is_top_hash);
 
-    let mut next_inner_layer: Box<dyn CommitmentSchemeVerifier<F, P, W>>;
-    match hash_name.as_str() {
-        "keccak256" => {
-            next_inner_layer = Box::new(
-                MerkleCommitmentSchemeVerifier::<F, Keccak256Hasher<F>, P, W>::new(
-                    cur_n_elements_in_layer,
-                ),
-            )
-        }
+    let mut next_inner_layer: Box<dyn CommitmentSchemeVerifier<F, P, W>> = match hash_name {
+        SupportedHashes::Keccak256 => Box::new(MerkleCommitmentSchemeVerifier::<
+            F,
+            Keccak256Hasher<F>,
+            P,
+            W,
+        >::new(cur_n_elements_in_layer)),
 
-        "keccak256_masked160_msb" => {
-            next_inner_layer = Box::new(MerkleCommitmentSchemeVerifier::<
-                F,
-                MaskedHash<F, Keccak256Hasher<F>, 20, true>,
-                P,
-                W,
-            >::new(cur_n_elements_in_layer))
-        }
+        SupportedHashes::Keccak256Masked160Msb => Box::new(MerkleCommitmentSchemeVerifier::<
+            F,
+            MaskedHash<F, Keccak256Hasher<F>, 20, true>,
+            P,
+            W,
+        >::new(cur_n_elements_in_layer)),
 
-        "keccak256_masked160_lsb" => {
-            next_inner_layer = Box::new(MerkleCommitmentSchemeVerifier::<
-                F,
-                MaskedHash<F, Keccak256Hasher<F>, 20, false>,
-                P,
-                W,
-            >::new(cur_n_elements_in_layer))
-        }
+        SupportedHashes::Keccak256Masked160Lsb => Box::new(MerkleCommitmentSchemeVerifier::<
+            F,
+            MaskedHash<F, Keccak256Hasher<F>, 20, false>,
+            P,
+            W,
+        >::new(cur_n_elements_in_layer)),
 
-        "blake2s256_masked160_msb" => {
-            next_inner_layer = Box::new(MerkleCommitmentSchemeVerifier::<
-                F,
-                MaskedHash<F, Blake2s256Hasher<F>, 20, true>,
-                P,
-                W,
-            >::new(cur_n_elements_in_layer))
-        }
+        SupportedHashes::Blake2s256Masked160Msb => Box::new(MerkleCommitmentSchemeVerifier::<
+            F,
+            MaskedHash<F, Blake2s256Hasher<F>, 20, true>,
+            P,
+            W,
+        >::new(cur_n_elements_in_layer)),
 
-        "blake2s256_masked160_lsb" => {
-            next_inner_layer = Box::new(MerkleCommitmentSchemeVerifier::<
-                F,
-                MaskedHash<F, Blake2s256Hasher<F>, 20, false>,
-                P,
-                W,
-            >::new(cur_n_elements_in_layer))
-        }
+        SupportedHashes::Blake2s256Masked160Lsb => Box::new(MerkleCommitmentSchemeVerifier::<
+            F,
+            MaskedHash<F, Blake2s256Hasher<F>, 20, false>,
+            P,
+            W,
+        >::new(cur_n_elements_in_layer)),
 
-        "blake2s256" => {
-            next_inner_layer = Box::new(MerkleCommitmentSchemeVerifier::<
-                F,
-                Blake2s256Hasher<F>,
-                P,
-                W,
-            >::new(cur_n_elements_in_layer))
-        }
+        SupportedHashes::Blake2s256 => Box::new(MerkleCommitmentSchemeVerifier::<
+            F,
+            Blake2s256Hasher<F>,
+            P,
+            W,
+        >::new(cur_n_elements_in_layer)),
 
-        "poseidon3" => {
-            next_inner_layer = Box::new(
-                MerkleCommitmentSchemeVerifier::<F, Poseidon3Hasher<F>, P, W>::new(
-                    cur_n_elements_in_layer,
-                ),
-            )
-        }
-
-        &_ => unreachable!(),
+        SupportedHashes::Poseidon3 => Box::new(MerkleCommitmentSchemeVerifier::<
+            F,
+            Poseidon3Hasher<F>,
+            P,
+            W,
+        >::new(cur_n_elements_in_layer)),
     };
 
     for i in 0..n_layers {
@@ -627,8 +642,8 @@ where
         let is_top_hash = i < n_verifier_friendly_layers;
         let hash_name = commitment_hashes.get_hash_name(is_top_hash);
 
-        match hash_name.as_str() {
-            "keccak256" => {
+        match hash_name {
+            SupportedHashes::Keccak256 => {
                 let packer = PackerHasher::new(32, cur_n_elements_in_layer);
                 next_inner_layer = Box::new(PackagingCommitmentSchemeVerifier::<
                     F,
@@ -644,7 +659,7 @@ where
                 ))
             }
 
-            "keccak256_masked160_msb" => {
+            SupportedHashes::Keccak256Masked160Msb => {
                 let packer = PackerHasher::new(32, cur_n_elements_in_layer);
                 next_inner_layer = Box::new(PackagingCommitmentSchemeVerifier::<
                     F,
@@ -660,7 +675,7 @@ where
                 ))
             }
 
-            "keccak256_masked160_lsb" => {
+            SupportedHashes::Keccak256Masked160Lsb => {
                 let packer = PackerHasher::new(32, cur_n_elements_in_layer);
                 next_inner_layer = Box::new(PackagingCommitmentSchemeVerifier::<
                     F,
@@ -676,7 +691,7 @@ where
                 ))
             }
 
-            "blake2s256_masked160_msb" => {
+            SupportedHashes::Blake2s256Masked160Msb => {
                 let packer = PackerHasher::new(32, cur_n_elements_in_layer);
                 next_inner_layer = Box::new(PackagingCommitmentSchemeVerifier::<
                     F,
@@ -692,7 +707,7 @@ where
                 ))
             }
 
-            "blake2s256_masked160_lsb" => {
+            SupportedHashes::Blake2s256Masked160Lsb => {
                 let packer = PackerHasher::new(32, cur_n_elements_in_layer);
                 next_inner_layer = Box::new(PackagingCommitmentSchemeVerifier::<
                     F,
@@ -708,7 +723,7 @@ where
                 ))
             }
 
-            "blake2s256" => {
+            SupportedHashes::Blake2s256 => {
                 let packer = PackerHasher::new(32, cur_n_elements_in_layer);
                 next_inner_layer = Box::new(PackagingCommitmentSchemeVerifier::<
                     F,
@@ -724,7 +739,7 @@ where
                 ))
             }
 
-            "poseidon3" => {
+            SupportedHashes::Poseidon3 => {
                 let packer = PackerHasher::new(32, cur_n_elements_in_layer);
                 next_inner_layer = Box::new(PackagingCommitmentSchemeVerifier::<
                     F,
@@ -739,8 +754,6 @@ where
                     true,
                 ))
             }
-
-            &_ => unreachable!(),
         };
     }
 
@@ -769,8 +782,8 @@ where
     let hashes = commitment_hashes.clone();
     let hash_name = hashes.get_hash_name(is_verifier_friendly_layer);
 
-    let commitment_scheme: Box<dyn CommitmentSchemeVerifier<F, P, W>> = match hash_name.as_str() {
-        "keccak256" => {
+    let commitment_scheme: Box<dyn CommitmentSchemeVerifier<F, P, W>> = match hash_name {
+        SupportedHashes::Keccak256 => {
             let packer: PackerHasher<F, Keccak256Hasher<F>> =
                 PackerHasher::new(size_of_element, n_elements);
 
@@ -794,7 +807,7 @@ where
             ))
         }
 
-        "keccak256_masked160_msb" => {
+        SupportedHashes::Keccak256Masked160Msb => {
             let packer: PackerHasher<F, MaskedHash<F, Keccak256Hasher<F>, 20, true>> =
                 PackerHasher::new(size_of_element, n_elements);
 
@@ -818,7 +831,7 @@ where
             ))
         }
 
-        "keccak256_masked160_lsb" => {
+        SupportedHashes::Keccak256Masked160Lsb => {
             let packer: PackerHasher<F, MaskedHash<F, Keccak256Hasher<F>, 20, false>> =
                 PackerHasher::new(size_of_element, n_elements);
 
@@ -842,7 +855,7 @@ where
             ))
         }
 
-        "blake2s256_masked160_msb" => {
+        SupportedHashes::Blake2s256Masked160Msb => {
             let packer: PackerHasher<F, MaskedHash<F, Blake2s256Hasher<F>, 20, true>> =
                 PackerHasher::new(size_of_element, n_elements);
 
@@ -866,7 +879,7 @@ where
             ))
         }
 
-        "blake2s256_masked160_lsb" => {
+        SupportedHashes::Blake2s256Masked160Lsb => {
             let packer: PackerHasher<F, MaskedHash<F, Blake2s256Hasher<F>, 20, false>> =
                 PackerHasher::new(size_of_element, n_elements);
 
@@ -890,7 +903,7 @@ where
             ))
         }
 
-        "blake2s256" => {
+        SupportedHashes::Blake2s256 => {
             let packer: PackerHasher<F, Blake2s256Hasher<F>> =
                 PackerHasher::new(size_of_element, n_elements);
 
@@ -914,7 +927,7 @@ where
             ))
         }
 
-        "poseidon3" => {
+        SupportedHashes::Poseidon3 => {
             let packer: PackerHasher<F, Poseidon3Hasher<F>> =
                 PackerHasher::new(size_of_element, n_elements);
 
@@ -937,8 +950,6 @@ where
                 false,
             ))
         }
-
-        &_ => unreachable!(),
     };
 
     commitment_scheme

@@ -112,6 +112,7 @@ impl<F: PrimeField, P: Prng, W: Digest> TableVerifier<F, P, W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::SupportedHashes;
     use crate::{
         make_commitment_scheme_prover, make_commitment_scheme_verifier, table_prover::TableProver,
         CommitmentHashes,
@@ -155,7 +156,7 @@ mod tests {
         let mut prover_channel: FSProverChannel<Felt252, PrngKeccak256, Sha3_256> =
             FSProverChannel::new(channel_prng);
 
-        let commitment_hashes = CommitmentHashes::from_single_hash("blake2s256".to_string());
+        let commitment_hashes = CommitmentHashes::from_single_hash(SupportedHashes::Blake2s256);
 
         let commitment_scheme = make_commitment_scheme_prover(
             size_of_row,
@@ -231,7 +232,7 @@ mod tests {
         let channel_prng = PrngKeccak256::new();
         let mut verifier_channel: FSVerifierChannel<Felt252, PrngKeccak256, Sha3_256> =
             FSVerifierChannel::new(channel_prng, proof);
-        let commitment_hashes = CommitmentHashes::from_single_hash("blake2s256".to_string());
+        let commitment_hashes = CommitmentHashes::from_single_hash(SupportedHashes::Blake2s256);
         let commitment_scheme =
             make_commitment_scheme_verifier(size_of_row, n_rows, 0, commitment_hashes, n_columns);
 

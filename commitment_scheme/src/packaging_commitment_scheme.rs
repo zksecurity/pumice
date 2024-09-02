@@ -277,7 +277,10 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
 mod tests {
 
     use super::*;
-    use crate::{make_commitment_scheme_prover, make_commitment_scheme_verifier, CommitmentHashes};
+    use crate::{
+        make_commitment_scheme_prover, make_commitment_scheme_verifier, CommitmentHashes,
+        SupportedHashes,
+    };
     use felt::Felt252;
     use randomness::keccak256::PrngKeccak256;
     use sha3::Sha3_256;
@@ -381,7 +384,7 @@ mod tests {
             164, 233, 90, 95, 203, 225, 80, 92, 226, 11, 38, 65, 75, 186,
         ];
         let elements_to_verify = BTreeMap::from([(0, vec![218])]);
-        let commitment_hashes = CommitmentHashes::from_single_hash("keccak256".to_string());
+        let commitment_hashes = CommitmentHashes::from_single_hash(SupportedHashes::Keccak256);
         test_packaging_completeness_with(
             size_of_element,
             n_segments,
@@ -428,7 +431,7 @@ mod tests {
                 ],
             ),
         ]);
-        let commitment_hashes = CommitmentHashes::from_single_hash("keccak256".to_string());
+        let commitment_hashes = CommitmentHashes::from_single_hash(SupportedHashes::Keccak256);
         test_packaging_completeness_with(
             size_of_element,
             n_segments,
@@ -465,7 +468,7 @@ mod tests {
             (4, vec![28, 20, 113, 33, 169, 7, 62, 125, 232]),
             (7, vec![249, 51, 75, 2, 29, 214, 172, 247, 141]),
         ]);
-        let commitment_hashes = CommitmentHashes::from_single_hash("keccak256".to_string());
+        let commitment_hashes = CommitmentHashes::from_single_hash(SupportedHashes::Keccak256);
         test_packaging_completeness_with(
             size_of_element,
             n_segments,
@@ -548,7 +551,7 @@ mod tests {
                 ],
             ),
         ]);
-        let commitment_hashes = CommitmentHashes::from_single_hash("keccak256".to_string());
+        let commitment_hashes = CommitmentHashes::from_single_hash(SupportedHashes::Keccak256);
         test_packaging_completeness_with(
             size_of_element,
             n_segments,
@@ -587,7 +590,7 @@ mod tests {
                 186, 85, 163, 0, 139, 112, 108, 14, 98, 197, 219, 225, 74,
             ],
         )]);
-        let commitment_hashes = CommitmentHashes::from_single_hash("keccak256".to_string());
+        let commitment_hashes = CommitmentHashes::from_single_hash(SupportedHashes::Keccak256);
         test_packaging_completeness_with(
             size_of_element,
             n_segments,
@@ -671,8 +674,8 @@ mod tests {
             ),
         ]);
         let commitment_hashes = CommitmentHashes::new(
-            "blake2s256_masked160_msb".to_string(),
-            "keccak256_masked160_msb".to_string(),
+            SupportedHashes::Blake2s256Masked160Msb,
+            SupportedHashes::Keccak256Masked160Msb,
         );
         test_packaging_completeness_with(
             size_of_element,
@@ -720,8 +723,8 @@ mod tests {
             ),
         ]);
         let commitment_hashes = CommitmentHashes::new(
-            "blake2s256_masked160_msb".to_string(),
-            "keccak256_masked160_msb".to_string(),
+            SupportedHashes::Blake2s256Masked160Msb,
+            SupportedHashes::Keccak256Masked160Msb,
         );
         test_packaging_completeness_with(
             size_of_element,
@@ -867,8 +870,8 @@ mod tests {
             ),
         ]);
         let commitment_hashes = CommitmentHashes::new(
-            "blake2s256_masked160_msb".to_string(),
-            "keccak256_masked160_msb".to_string(),
+            SupportedHashes::Blake2s256Masked160Msb,
+            SupportedHashes::Keccak256Masked160Msb,
         );
         test_packaging_completeness_with(
             size_of_element,
@@ -1004,8 +1007,8 @@ mod tests {
             ),
         ]);
         let commitment_hashes = CommitmentHashes::new(
-            "blake2s256_masked160_msb".to_string(),
-            "keccak256_masked160_msb".to_string(),
+            SupportedHashes::Blake2s256Masked160Msb,
+            SupportedHashes::Keccak256Masked160Msb,
         );
         test_packaging_completeness_with(
             size_of_element,
@@ -1194,8 +1197,8 @@ mod tests {
             ),
         ]);
         let commitment_hashes = CommitmentHashes::new(
-            "keccak256_masked160_lsb".to_string(),
-            "blake2s256_masked160_lsb".to_string(),
+            SupportedHashes::Keccak256Masked160Lsb,
+            SupportedHashes::Blake2s256Masked160Lsb,
         );
         test_packaging_completeness_with(
             size_of_element,
@@ -1322,8 +1325,8 @@ mod tests {
             ),
         ]);
         let commitment_hashes = CommitmentHashes::new(
-            "keccak256_masked160_lsb".to_string(),
-            "blake2s256_masked160_lsb".to_string(),
+            SupportedHashes::Keccak256Masked160Lsb,
+            SupportedHashes::Blake2s256Masked160Lsb,
         );
         test_packaging_completeness_with(
             size_of_element,
@@ -1491,8 +1494,8 @@ mod tests {
             ),
         ]);
         let commitment_hashes = CommitmentHashes::new(
-            "poseidon3".to_string(),
-            "blake2s256_masked160_lsb".to_string(),
+            SupportedHashes::Poseidon3,
+            SupportedHashes::Blake2s256Masked160Lsb,
         );
         test_packaging_completeness_with(
             size_of_element,
@@ -1670,8 +1673,8 @@ mod tests {
             ),
         ]);
         let commitment_hashes = CommitmentHashes::new(
-            "poseidon3".to_string(),
-            "blake2s256_masked160_lsb".to_string(),
+            SupportedHashes::Poseidon3,
+            SupportedHashes::Blake2s256Masked160Lsb,
         );
         test_packaging_completeness_with(
             size_of_element,
@@ -1718,7 +1721,7 @@ mod tests {
                 211, 101, 242, 174, 112, 237, 19, 235, 122, 40, 246, 18, 87, 27, 224, 2, 146, 109,
             ],
         )]);
-        let commitment_hashes = CommitmentHashes::from_single_hash("keccak256".to_string());
+        let commitment_hashes = CommitmentHashes::from_single_hash(SupportedHashes::Keccak256);
         test_packaging_completeness_with(
             size_of_element,
             n_segments,
