@@ -10,39 +10,42 @@ use channel::{
 };
 use randomness::Prng;
 use sha3::Digest;
-use std::collections::BTreeMap;
-use std::rc::Rc;
-use std::{cell::RefCell, collections::BTreeSet};
+use std::collections::BTreeSet;
+use std::{collections::BTreeMap, marker::PhantomData};
 
 use super::MerkleTree;
 
 #[allow(dead_code)]
 pub struct MerkleCommitmentSchemeProver<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> {
     n_elements: usize,
-    channel: Rc<RefCell<FSProverChannel<F, P, W>>>,
     tree: MerkleTree<F, H>,
     min_segment_bytes: usize,
     size_of_element: usize,
     queries: BTreeSet<usize>,
+    phantom: PhantomData<(P, W)>,
 }
 
 impl<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> MerkleCommitmentSchemeProver<F, H, P, W> {
     #[allow(dead_code)]
-    pub fn new(n_elements: usize, channel: Rc<RefCell<FSProverChannel<F, P, W>>>) -> Self {
+    pub fn new(n_elements: usize) -> Self {
         let tree = MerkleTree::new(n_elements);
         Self {
             n_elements,
-            channel,
             tree,
             min_segment_bytes: 2 * H::DIGEST_NUM_BYTES,
             size_of_element: H::DIGEST_NUM_BYTES,
             queries: BTreeSet::new(),
+            phantom: PhantomData,
         }
     }
 }
 
-impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest> CommitmentSchemeProver
-    for MerkleCommitmentSchemeProver<F, H, P, W>
+impl<F, H, P, W> CommitmentSchemeProver<F, P, W> for MerkleCommitmentSchemeProver<F, H, P, W>
+where
+    F: PrimeField,
+    H: Hasher<F, Output = [u8; 32]>,
+    P: Prng,
+    W: Digest,
 {
     fn num_segments(&self) -> usize {
         self.n_elements
@@ -57,16 +60,16 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest> Commitm
     }
 
     fn add_segment_for_commitment(&mut self, segment_data: &[u8], segment_index: usize) {
-        assert!(segment_data.len() == self.segment_length_in_elements() * self.size_of_element);
+        let segment_length = self.segment_length_in_elements();
+        assert!(segment_data.len() == segment_length * self.size_of_element);
         self.tree.add_data(
             &bytes_as_hash::<F, H>(segment_data, self.size_of_element),
-            segment_index * self.segment_length_in_elements(),
+            segment_index * segment_length,
         );
     }
 
-    fn commit(&mut self) -> Result<(), Error> {
+    fn commit(&mut self, channel: &mut FSProverChannel<F, P, W>) -> Result<(), Error> {
         let comm = self.tree.get_root();
-        let mut channel = self.channel.borrow_mut();
         channel.send_commit_hash(comm)?;
         Ok(())
     }
@@ -76,40 +79,45 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest> Commitm
         vec![]
     }
 
-    fn decommit(&mut self, elements_data: &[u8]) {
+    fn decommit(
+        &mut self,
+        elements_data: &[u8],
+        channel: &mut FSProverChannel<F, P, W>,
+    ) -> Result<(), Error> {
         assert!(elements_data.is_empty());
-        let mut channel = self.channel.borrow_mut();
-        self.tree.generate_decommitment(&self.queries, &mut channel);
+        self.tree.generate_decommitment(&self.queries, channel);
+        Ok(())
     }
 
-    fn get_proof(&self) -> Vec<u8> {
-        let channel = self.channel.borrow_mut();
+    fn get_proof(&self, channel: &mut FSProverChannel<F, P, W>) -> Vec<u8> {
         channel.get_proof()
     }
 }
 
 pub struct MerkleCommitmentSchemeVerifier<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> {
     n_elements: usize,
-    channel: Rc<RefCell<FSVerifierChannel<F, P, W>>>,
     comm: H::Output,
+    phantom: PhantomData<(P, W)>,
 }
 
 impl<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> MerkleCommitmentSchemeVerifier<F, H, P, W> {
     #[allow(dead_code)]
-    pub fn new(n_elements: usize, channel: Rc<RefCell<FSVerifierChannel<F, P, W>>>) -> Self {
+    pub fn new(n_elements: usize) -> Self {
         Self {
             n_elements,
-            channel,
             comm: H::Output::default(),
+            phantom: PhantomData,
         }
     }
 }
 
-impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest> CommitmentSchemeVerifier
-    for MerkleCommitmentSchemeVerifier<F, H, P, W>
+impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
+    CommitmentSchemeVerifier<F, P, W> for MerkleCommitmentSchemeVerifier<F, H, P, W>
 {
-    fn read_commitment(&mut self) -> Result<(), anyhow::Error> {
-        let mut channel = self.channel.borrow_mut();
+    fn read_commitment(
+        &mut self,
+        channel: &mut FSVerifierChannel<F, P, W>,
+    ) -> Result<(), anyhow::Error> {
         let comm_vec = channel.recv_commit_hash(H::DIGEST_NUM_BYTES)?;
         assert_eq!(comm_vec.len(), 32);
         let mut comm_bytes = [0u8; 32];
@@ -120,9 +128,9 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest> Commitm
 
     fn verify_integrity(
         &mut self,
+        channel: &mut FSVerifierChannel<F, P, W>,
         elements_to_verify: BTreeMap<usize, Vec<u8>>,
     ) -> Result<bool, Error> {
-        let mut channel = self.channel.borrow_mut();
         let elements_to_verify = elements_to_verify
             .iter()
             .map(|(i, v)| {
@@ -136,7 +144,7 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest> Commitm
             self.comm,
             self.n_elements,
             &elements_to_verify,
-            &mut channel,
+            channel,
         )
     }
 
@@ -164,14 +172,14 @@ mod tests {
     ) {
         // Merkle Prover
         let channel_prng = PrngKeccak256::new();
-        let prover_channel: Rc<RefCell<FSProverChannel<Felt252, PrngKeccak256, Sha3_256>>> =
-            Rc::new(RefCell::new(FSProverChannel::new(channel_prng.clone())));
+        let mut prover_channel: FSProverChannel<Felt252, PrngKeccak256, Sha3_256> =
+            FSProverChannel::new(channel_prng.clone());
         let mut merkle_prover: MerkleCommitmentSchemeProver<
             Felt252,
             Keccak256Hasher<Felt252>,
             PrngKeccak256,
             Sha3_256,
-        > = MerkleCommitmentSchemeProver::new(n_elements, prover_channel.clone());
+        > = MerkleCommitmentSchemeProver::new(n_elements);
         for i in 0..n_segments {
             let segment = {
                 let n_segment_bytes = size_of_element * (n_elements / n_segments);
@@ -179,29 +187,33 @@ mod tests {
             };
             merkle_prover.add_segment_for_commitment(segment, i);
         }
-        merkle_prover.commit().unwrap();
+        merkle_prover.commit(&mut prover_channel).unwrap();
         let element_idxs = merkle_prover.start_decommitment_phase(queries);
         let elements_data: Vec<u8> = element_idxs
             .iter()
             .flat_map(|&idx| &data[idx * size_of_element..(idx + 1) * size_of_element])
             .cloned()
             .collect();
-        merkle_prover.decommit(&elements_data);
-        let proof = merkle_prover.get_proof();
+        merkle_prover
+            .decommit(&elements_data, &mut prover_channel)
+            .unwrap();
+        let proof = merkle_prover.get_proof(&mut prover_channel);
         assert_eq!(proof, exp_proof);
 
         // Merkle Verifier
-        let verifier_channel: Rc<RefCell<FSVerifierChannel<Felt252, PrngKeccak256, Sha3_256>>> =
-            Rc::new(RefCell::new(FSVerifierChannel::new(channel_prng, proof)));
+        let mut verifier_channel: FSVerifierChannel<Felt252, PrngKeccak256, Sha3_256> =
+            FSVerifierChannel::new(channel_prng, proof);
         let mut merkle_verifier: MerkleCommitmentSchemeVerifier<
             Felt252,
             Keccak256Hasher<Felt252>,
             PrngKeccak256,
             Sha3_256,
-        > = MerkleCommitmentSchemeVerifier::new(n_elements, verifier_channel);
-        let _ = merkle_verifier.read_commitment();
+        > = MerkleCommitmentSchemeVerifier::new(n_elements);
+        merkle_verifier
+            .read_commitment(&mut verifier_channel)
+            .unwrap();
         assert!(merkle_verifier
-            .verify_integrity(elements_to_verify)
+            .verify_integrity(&mut verifier_channel, elements_to_verify)
             .unwrap());
     }
 

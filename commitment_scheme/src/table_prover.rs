@@ -5,9 +5,7 @@ use channel::fs_prover_channel::FSProverChannel;
 use channel::ProverChannel;
 use randomness::Prng;
 use sha3::Digest;
-use std::cell::RefCell;
 use std::collections::BTreeSet;
-use std::rc::Rc;
 
 /// TableProverFactory is a function that creates an instance of TableProver.
 #[allow(dead_code)]
@@ -15,8 +13,7 @@ type TableProverFactory<F, P, W> = fn(usize, usize, usize) -> TableProver<F, P, 
 
 pub struct TableProver<F: PrimeField, P: Prng, W: Digest> {
     n_columns: usize,
-    commitment_scheme: Box<dyn CommitmentSchemeProver>,
-    channel: Rc<RefCell<FSProverChannel<F, P, W>>>,
+    commitment_scheme: Box<dyn CommitmentSchemeProver<F, P, W>>,
     data_queries: BTreeSet<RowCol>,
     integrity_queries: BTreeSet<RowCol>,
     all_query_rows: BTreeSet<usize>,
@@ -25,13 +22,11 @@ pub struct TableProver<F: PrimeField, P: Prng, W: Digest> {
 impl<F: PrimeField, P: Prng, W: Digest> TableProver<F, P, W> {
     pub fn new(
         n_columns: usize,
-        commitment_scheme: Box<dyn CommitmentSchemeProver>,
-        channel: Rc<RefCell<FSProverChannel<F, P, W>>>,
+        commitment_scheme: Box<dyn CommitmentSchemeProver<F, P, W>>,
     ) -> Self {
         Self {
             n_columns,
             commitment_scheme,
-            channel,
             data_queries: BTreeSet::new(),
             integrity_queries: BTreeSet::new(),
             all_query_rows: BTreeSet::new(),
@@ -55,8 +50,8 @@ impl<F: PrimeField, P: Prng, W: Digest> TableProver<F, P, W> {
             .add_segment_for_commitment(&serialize_field_columns(segment), segment_idx);
     }
 
-    pub fn commit(&mut self) -> Result<(), anyhow::Error> {
-        self.commitment_scheme.commit()
+    pub fn commit(&mut self, channel: &mut FSProverChannel<F, P, W>) -> Result<(), anyhow::Error> {
+        self.commitment_scheme.commit(channel)
     }
 
     pub fn start_decommitment_phase(
@@ -88,7 +83,11 @@ impl<F: PrimeField, P: Prng, W: Digest> TableProver<F, P, W> {
         rows_to_request
     }
 
-    pub fn decommit(&mut self, elements_data: &[Vec<F>]) {
+    pub fn decommit(
+        &mut self,
+        channel: &mut FSProverChannel<F, P, W>,
+        elements_data: &[Vec<F>],
+    ) -> Result<(), anyhow::Error> {
         assert!(
             elements_data.len() == self.n_columns,
             "Expected the size of elements_data to be the number of columns."
@@ -125,15 +124,16 @@ impl<F: PrimeField, P: Prng, W: Digest> TableProver<F, P, W> {
 
                     if let Some(&to_transmit_loc) = to_transmit_it.next() {
                         assert!(to_transmit_loc == query_loc);
-                        let mut channel = self.channel.borrow_mut();
-                        let _ = channel.send_felts(&[data[i]]);
+                        channel.send_felts(&[data[i]])?;
                     }
                 }
             }
         }
 
         self.commitment_scheme
-            .decommit(&serialize_field_columns(&elements_data_last_rows));
+            .decommit(&serialize_field_columns(&elements_data_last_rows), channel)?;
+
+        Ok(())
     }
 }
 

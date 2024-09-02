@@ -1,7 +1,7 @@
 use crate::merkle::hash::Hasher;
 use crate::packer_hasher::PackerHasher;
 use crate::{CommitmentSchemeProver, CommitmentSchemeVerifier};
-use anyhow::Error;
+use anyhow::{Error, Ok};
 use ark_ff::PrimeField;
 use channel::fs_prover_channel::FSProverChannel;
 use channel::fs_verifier_channel::FSVerifierChannel;
@@ -9,25 +9,15 @@ use channel::ProverChannel;
 use channel::VerifierChannel;
 use randomness::Prng;
 use sha3::Digest;
-use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::rc::Rc;
-
-// These closures are given as an input parameter to packaging commitment scheme prover and verifier
-// (correspondingly) to enable creation of inner_commitment_scheme after creating the packer.
-type PackagingCommitmentSchemeProverFactory =
-    Box<dyn FnOnce(usize) -> Box<dyn CommitmentSchemeProver>>;
-type PackagingCommitmentSchemeVerifierFactory =
-    Box<dyn FnOnce(usize) -> Box<dyn CommitmentSchemeVerifier>>;
 
 /// Prover of Packaging Commitment Scheme.
 pub struct PackagingCommitmentSchemeProver<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> {
     size_of_element: usize,
     n_elements_in_segment: usize,
     n_segments: usize,
-    channel: Rc<RefCell<FSProverChannel<F, P, W>>>,
     packer: PackerHasher<F, H>,
-    inner_commitment_scheme: Box<dyn CommitmentSchemeProver>,
+    inner_commitment_scheme: Box<dyn CommitmentSchemeProver<F, P, W>>,
     is_merkle_layer: bool,
     queries: BTreeSet<usize>,
     missing_element_queries: Vec<usize>,
@@ -42,22 +32,22 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
         size_of_element: usize,
         n_elements_in_segment: usize,
         n_segments: usize,
-        channel: Rc<RefCell<FSProverChannel<F, P, W>>>,
-        inner_commitment_scheme_factory: PackagingCommitmentSchemeProverFactory,
+        packer: PackerHasher<F, H>,
+        inner_commitment_scheme: Box<dyn CommitmentSchemeProver<F, P, W>>,
         is_merkle_layer: bool,
     ) -> Self {
-        let packer = PackerHasher::new(size_of_element, n_segments * n_elements_in_segment);
-        let inner_commitment_scheme = inner_commitment_scheme_factory(packer.n_packages);
-
         if is_merkle_layer {
             assert!(packer.n_elements_in_package == 2);
+            assert_eq!(
+                2 * inner_commitment_scheme.segment_length_in_elements(),
+                n_elements_in_segment
+            );
         }
 
         Self {
             size_of_element,
             n_elements_in_segment,
             n_segments,
-            channel,
             packer,
             inner_commitment_scheme,
             is_merkle_layer,
@@ -65,32 +55,6 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
             missing_element_queries: vec![],
             n_missing_elements_for_inner_layer: 0,
         }
-    }
-
-    pub fn new_with_existing(
-        size_of_element: usize,
-        n_elements_in_segment: usize,
-        n_segments: usize,
-        channel: Rc<RefCell<FSProverChannel<F, P, W>>>,
-        inner_commitment_scheme: Box<dyn CommitmentSchemeProver>,
-    ) -> Self {
-        let commitment_scheme = Self::new(
-            size_of_element,
-            n_elements_in_segment,
-            n_segments,
-            channel,
-            Box::new(move |_: usize| inner_commitment_scheme),
-            true,
-        );
-
-        assert_eq!(
-            2 * commitment_scheme
-                .inner_commitment_scheme
-                .segment_length_in_elements(),
-            n_elements_in_segment
-        );
-
-        commitment_scheme
     }
 
     fn get_num_of_packages(&self) -> usize {
@@ -102,8 +66,8 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
     }
 }
 
-impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest> CommitmentSchemeProver
-    for PackagingCommitmentSchemeProver<F, H, P, W>
+impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
+    CommitmentSchemeProver<F, P, W> for PackagingCommitmentSchemeProver<F, H, P, W>
 {
     fn element_length_in_bytes(&self) -> usize {
         self.size_of_element
@@ -130,8 +94,8 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest> Commitm
             .add_segment_for_commitment(&packed, segment_index);
     }
 
-    fn commit(&mut self) -> Result<(), anyhow::Error> {
-        self.inner_commitment_scheme.commit()
+    fn commit(&mut self, channel: &mut FSProverChannel<F, P, W>) -> Result<(), anyhow::Error> {
+        self.inner_commitment_scheme.commit(channel)
     }
 
     fn start_decommitment_phase(&mut self, queries: BTreeSet<usize>) -> Vec<usize> {
@@ -167,7 +131,11 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest> Commitm
         all_missing_elements
     }
 
-    fn decommit(&mut self, elements_data: &[u8]) {
+    fn decommit(
+        &mut self,
+        elements_data: &[u8],
+        channel: &mut FSProverChannel<F, P, W>,
+    ) -> Result<(), Error> {
         assert_eq!(
             elements_data.len(),
             self.size_of_element
@@ -181,11 +149,9 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest> Commitm
 
             if self.is_merkle_layer {
                 let digest = bytes_to_send.to_vec();
-                let mut channel = self.channel.borrow_mut();
-                let _ = channel.send_decommit_node(digest);
+                channel.send_decommit_node(digest)?;
             } else {
-                let mut channel = self.channel.borrow_mut();
-                let _ = channel.send_data(bytes_to_send);
+                channel.send_data(bytes_to_send)?;
             }
         }
 
@@ -195,11 +161,12 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest> Commitm
             .packer
             .pack_and_hash_internal(&elements_data[start..end], self.is_merkle_layer);
 
-        self.inner_commitment_scheme.decommit(&data_for_inner_layer);
+        self.inner_commitment_scheme
+            .decommit(&data_for_inner_layer, channel)?;
+        Ok(())
     }
 
-    fn get_proof(&self) -> Vec<u8> {
-        let channel = self.channel.borrow_mut();
+    fn get_proof(&self, channel: &mut FSProverChannel<F, P, W>) -> Vec<u8> {
         channel.get_proof()
     }
 }
@@ -208,9 +175,8 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest> Commitm
 pub struct PackagingCommitmentSchemeVerifier<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> {
     size_of_element: usize,
     n_elements: usize,
-    channel: Rc<RefCell<FSVerifierChannel<F, P, W>>>,
     packer: PackerHasher<F, H>,
-    inner_commitment_scheme: Box<dyn CommitmentSchemeVerifier>,
+    inner_commitment_scheme: Box<dyn CommitmentSchemeVerifier<F, P, W>>,
     is_merkle_layer: bool,
 }
 
@@ -234,82 +200,22 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
     pub fn new(
         size_of_element: usize,
         n_elements: usize,
-        channel: Rc<RefCell<FSVerifierChannel<F, P, W>>>,
-        inner_commitment_scheme_factory: PackagingCommitmentSchemeVerifierFactory,
-        is_merkle_layer: bool,
-    ) -> Self {
-        let packer = PackerHasher::new(size_of_element, n_elements);
-        let inner_commitment_scheme = inner_commitment_scheme_factory(packer.n_packages);
-
-        if is_merkle_layer {
-            assert_eq!(packer.n_elements_in_package, 2);
-        }
-
-        Self {
-            size_of_element,
-            n_elements,
-            channel,
-            packer,
-            inner_commitment_scheme,
-            is_merkle_layer,
-        }
-    }
-
-    pub fn new_test(
-        size_of_element: usize,
-        n_elements: usize,
-        channel: Rc<RefCell<FSVerifierChannel<F, P, W>>>,
-        is_merkle_layer: bool,
         packer: PackerHasher<F, H>,
-        inner_commitment_scheme: Box<dyn CommitmentSchemeVerifier>,
+        inner_commitment_scheme: Box<dyn CommitmentSchemeVerifier<F, P, W>>,
+        is_merkle_layer: bool,
     ) -> Self {
         if is_merkle_layer {
             assert_eq!(packer.n_elements_in_package, 2);
+            assert_eq!(2 * inner_commitment_scheme.num_of_elements(), n_elements);
         }
 
         Self {
             size_of_element,
             n_elements,
-            channel,
             packer,
             inner_commitment_scheme,
             is_merkle_layer,
         }
-    }
-
-    /// Constructs a new PackagingCommitmentSchemeVerifier with the input commitment scheme verifier.
-    ///
-    /// # Arguments
-    ///
-    /// - `size_of_element`: length of element in bytes.
-    /// - `n_elements`: number of elements.
-    /// - `channel`: Fiat-Shamir verifier channel
-    /// - `inner_commitment_scheme`: commitment scheme verifier
-    /// - `is_merkle_layer`: flag to indicate Merkle layer.
-    ///
-    /// # Returns
-    ///
-    /// - `Self`: PackagingCommitmentSchemeVerifier
-    pub fn new_with_existing(
-        size_of_element: usize,
-        n_elements: usize,
-        channel: Rc<RefCell<FSVerifierChannel<F, P, W>>>,
-        inner_commitment_scheme: Box<dyn CommitmentSchemeVerifier>,
-    ) -> Self {
-        let commitment_scheme = Self::new(
-            size_of_element,
-            n_elements,
-            channel,
-            Box::new(move |_: usize| inner_commitment_scheme),
-            true,
-        );
-
-        assert_eq!(
-            2 * commitment_scheme.inner_commitment_scheme.num_of_elements(),
-            n_elements
-        );
-
-        commitment_scheme
     }
 
     fn get_num_of_packages(&self) -> usize {
@@ -322,19 +228,23 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
 }
 
 /// Implement CommitmentSchemeVerifier trait for PackagingCommitmentSchemeVerifier
-impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest> CommitmentSchemeVerifier
-    for PackagingCommitmentSchemeVerifier<F, H, P, W>
+impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
+    CommitmentSchemeVerifier<F, P, W> for PackagingCommitmentSchemeVerifier<F, H, P, W>
 {
     fn num_of_elements(&self) -> usize {
         self.n_elements
     }
 
-    fn read_commitment(&mut self) -> Result<(), anyhow::Error> {
-        self.inner_commitment_scheme.read_commitment()
+    fn read_commitment(
+        &mut self,
+        channel: &mut FSVerifierChannel<F, P, W>,
+    ) -> Result<(), anyhow::Error> {
+        self.inner_commitment_scheme.read_commitment(channel)
     }
 
     fn verify_integrity(
         &mut self,
+        channel: &mut FSVerifierChannel<F, P, W>,
         elements_to_verify: BTreeMap<usize, Vec<u8>>,
     ) -> Result<bool, Error> {
         // Get missing elements required to compute hashes
@@ -345,11 +255,9 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest> Commitm
 
         for &missing_element_idx in &missing_elements_idxs {
             if self.is_merkle_layer {
-                let mut channel = self.channel.borrow_mut();
                 let result_array = channel.recv_decommit_node(H::DIGEST_NUM_BYTES)?;
                 full_data_to_verify.insert(missing_element_idx, result_array.to_vec());
             } else {
-                let mut channel = self.channel.borrow_mut();
                 let data = channel.recv_data(self.size_of_element)?;
                 full_data_to_verify.insert(missing_element_idx, data);
             }
@@ -361,7 +269,7 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest> Commitm
             .pack_and_hash(&full_data_to_verify, self.is_merkle_layer);
 
         self.inner_commitment_scheme
-            .verify_integrity(bytes_to_verify)
+            .verify_integrity(channel, bytes_to_verify)
     }
 }
 
@@ -388,18 +296,16 @@ mod tests {
         let channel_prng = PrngKeccak256::new();
 
         // Prover
-        let prover_channel: Rc<RefCell<FSProverChannel<Felt252, PrngKeccak256, Sha3_256>>> =
-            Rc::new(RefCell::new(FSProverChannel::new(channel_prng.clone())));
+        let mut prover_channel: FSProverChannel<Felt252, PrngKeccak256, Sha3_256> =
+            FSProverChannel::new(channel_prng.clone());
         let n_elements_in_segment = n_elements / n_segments;
         let mut prover = make_commitment_scheme_prover(
             size_of_element,
             n_elements_in_segment,
             n_segments,
-            prover_channel.clone(),
             n_verifier_friendly_commitment_layers,
             commitment_hashes.clone(),
             1,
-            0,
         );
         for i in 0..n_segments {
             let segment = {
@@ -408,30 +314,34 @@ mod tests {
             };
             prover.add_segment_for_commitment(segment, i);
         }
-        prover.commit().unwrap();
+        prover.commit(&mut prover_channel).unwrap();
         let element_idxs = prover.start_decommitment_phase(queries);
         let elements_data: Vec<u8> = element_idxs
             .iter()
             .flat_map(|&idx| &data[idx * size_of_element..(idx + 1) * size_of_element])
             .cloned()
             .collect();
-        prover.decommit(&elements_data);
-        let proof = prover_channel.borrow_mut().get_proof();
+        prover
+            .decommit(&elements_data, &mut prover_channel)
+            .unwrap();
+        let proof = prover_channel.get_proof();
         assert_eq!(proof, exp_proof);
 
         // Verifier
-        let verifier_channel: Rc<RefCell<FSVerifierChannel<Felt252, PrngKeccak256, Sha3_256>>> =
-            Rc::new(RefCell::new(FSVerifierChannel::new(channel_prng, proof)));
+        let mut verifier_channel: FSVerifierChannel<Felt252, PrngKeccak256, Sha3_256> =
+            FSVerifierChannel::new(channel_prng, proof);
+
         let mut verifier = make_commitment_scheme_verifier(
             size_of_element,
             n_elements,
-            verifier_channel,
             n_verifier_friendly_commitment_layers,
             commitment_hashes,
             1,
         );
-        let _ = verifier.read_commitment();
-        assert!(verifier.verify_integrity(elements_to_verify).unwrap());
+        verifier.read_commitment(&mut verifier_channel).unwrap();
+        assert!(verifier
+            .verify_integrity(&mut verifier_channel, elements_to_verify)
+            .unwrap());
     }
 
     fn test_verify_corrupted(
@@ -443,18 +353,19 @@ mod tests {
         commitment_hashes: CommitmentHashes,
     ) {
         let channel_prng = PrngKeccak256::new();
-        let verifier_channel: Rc<RefCell<FSVerifierChannel<Felt252, PrngKeccak256, Sha3_256>>> =
-            Rc::new(RefCell::new(FSVerifierChannel::new(channel_prng, proof)));
+        let mut verifier_channel: FSVerifierChannel<Felt252, PrngKeccak256, Sha3_256> =
+            FSVerifierChannel::new(channel_prng, proof);
         let mut verifier = make_commitment_scheme_verifier(
             size_of_element,
             n_elements,
-            verifier_channel,
             n_verifier_friendly_commitment_layers,
             commitment_hashes,
             1,
         );
-        let _ = verifier.read_commitment();
-        assert!(!verifier.verify_integrity(elements_to_verify).unwrap());
+        verifier.read_commitment(&mut verifier_channel).unwrap();
+        assert!(!verifier
+            .verify_integrity(&mut verifier_channel, elements_to_verify)
+            .unwrap());
     }
 
     #[test]

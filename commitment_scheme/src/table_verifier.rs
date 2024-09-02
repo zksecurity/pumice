@@ -6,9 +6,7 @@ use channel::fs_verifier_channel::FSVerifierChannel;
 use channel::VerifierChannel;
 use randomness::Prng;
 use sha3::Digest;
-use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::rc::Rc;
 
 /// TableVerifierFactory is a function that creates an instance of TableVerifier.
 #[allow(dead_code)]
@@ -16,27 +14,27 @@ type TableVerifierFactory<F, P, W> = fn(usize, usize) -> TableVerifier<F, P, W>;
 
 pub struct TableVerifier<F: PrimeField, P: Prng, W: Digest> {
     n_columns: usize,
-    commitment_scheme: Box<dyn CommitmentSchemeVerifier>,
-    channel: Rc<RefCell<FSVerifierChannel<F, P, W>>>,
+    commitment_scheme: Box<dyn CommitmentSchemeVerifier<F, P, W>>,
 }
 
 impl<F: PrimeField, P: Prng, W: Digest> TableVerifier<F, P, W> {
     /// Create new TableVerifier.
     pub fn new(
         n_columns: usize,
-        commitment_scheme: Box<dyn CommitmentSchemeVerifier>,
-        channel: Rc<RefCell<FSVerifierChannel<F, P, W>>>,
+        commitment_scheme: Box<dyn CommitmentSchemeVerifier<F, P, W>>,
     ) -> Self {
         Self {
             n_columns,
             commitment_scheme,
-            channel,
         }
     }
 
     /// Reads the initial commitment into the scheme (e.g., Merkle root).
-    pub fn read_commitment(&mut self) -> Result<(), anyhow::Error> {
-        self.commitment_scheme.read_commitment()
+    pub fn read_commitment(
+        &mut self,
+        channel: &mut FSVerifierChannel<F, P, W>,
+    ) -> Result<(), anyhow::Error> {
+        self.commitment_scheme.read_commitment(channel)
     }
 
     /// Returns query results from the channel.
@@ -44,6 +42,7 @@ impl<F: PrimeField, P: Prng, W: Digest> TableVerifier<F, P, W> {
     /// and integrity queries (i.e. queries for which the verifier can compute the answer).
     pub fn query(
         &mut self,
+        channel: &mut FSVerifierChannel<F, P, W>,
         data_queries: &BTreeSet<RowCol>,
         integrity_queries: &BTreeSet<RowCol>,
     ) -> Result<BTreeMap<RowCol, F>, anyhow::Error> {
@@ -57,7 +56,6 @@ impl<F: PrimeField, P: Prng, W: Digest> TableVerifier<F, P, W> {
         );
 
         for query_loc in to_receive {
-            let mut channel = self.channel.borrow_mut();
             let field_element = channel.recv_felts(1)?;
             response.insert(query_loc, field_element[0]);
         }
@@ -68,7 +66,11 @@ impl<F: PrimeField, P: Prng, W: Digest> TableVerifier<F, P, W> {
     /// Given indexed field elements, verify that these field elements are indeed the ones committed to
     /// by the prover, against the commitment obtained by read_commitment().
     #[allow(dead_code)]
-    fn verify_decommitment(&mut self, all_rows_data: &BTreeMap<RowCol, F>) -> Result<bool, Error> {
+    fn verify_decommitment(
+        &mut self,
+        channel: &mut FSVerifierChannel<F, P, W>,
+        all_rows_data: &BTreeMap<RowCol, F>,
+    ) -> Result<bool, Error> {
         let mut integrity_map: BTreeMap<usize, Vec<u8>> = BTreeMap::new();
 
         let element_size = F::MODULUS_BIT_SIZE.div_ceil(8) as usize;
@@ -101,7 +103,8 @@ impl<F: PrimeField, P: Prng, W: Digest> TableVerifier<F, P, W> {
         }
 
         // Verify the integrity map using the commitment scheme.
-        self.commitment_scheme.verify_integrity(integrity_map)
+        self.commitment_scheme
+            .verify_integrity(channel, integrity_map)
     }
 }
 
@@ -149,8 +152,8 @@ mod tests {
         }
 
         let channel_prng = PrngKeccak256::new();
-        let prover_channel: Rc<RefCell<FSProverChannel<Felt252, PrngKeccak256, Sha3_256>>> =
-            Rc::new(RefCell::new(FSProverChannel::new(channel_prng)));
+        let mut prover_channel: FSProverChannel<Felt252, PrngKeccak256, Sha3_256> =
+            FSProverChannel::new(channel_prng);
 
         let commitment_hashes = CommitmentHashes::from_single_hash("blake2s256".to_string());
 
@@ -158,15 +161,12 @@ mod tests {
             size_of_row,
             n_rows_per_segment,
             n_segments,
-            prover_channel.clone(),
             0,
             commitment_hashes,
             n_columns,
-            10,
         );
 
-        let mut table_prover =
-            TableProver::new(n_columns, commitment_scheme, prover_channel.clone());
+        let mut table_prover = TableProver::new(n_columns, commitment_scheme);
 
         for (i, segment) in segment_data.iter().enumerate() {
             let segment_slice: Vec<Vec<Felt252>> =
@@ -174,7 +174,7 @@ mod tests {
             table_prover.add_segment_for_commitment(&segment_slice, i, 1);
         }
 
-        table_prover.commit().unwrap();
+        table_prover.commit(&mut prover_channel).unwrap();
 
         let elements_idxs_for_decommitment =
             table_prover.start_decommitment_phase(data_queries.clone(), integrity_queries.clone());
@@ -196,9 +196,10 @@ mod tests {
             elements_data.push(res);
         }
 
-        table_prover.decommit(&elements_data);
+        table_prover
+            .decommit(&mut prover_channel, &elements_data)
+            .unwrap();
 
-        let prover_channel = prover_channel.borrow_mut();
         let proof = prover_channel.get_proof();
         proof
     }
@@ -228,24 +229,18 @@ mod tests {
         let size_of_row = field_element_size * n_columns;
 
         let channel_prng = PrngKeccak256::new();
-        let verifier_channel: Rc<RefCell<FSVerifierChannel<Felt252, PrngKeccak256, Sha3_256>>> =
-            Rc::new(RefCell::new(FSVerifierChannel::new(channel_prng, proof)));
+        let mut verifier_channel: FSVerifierChannel<Felt252, PrngKeccak256, Sha3_256> =
+            FSVerifierChannel::new(channel_prng, proof);
         let commitment_hashes = CommitmentHashes::from_single_hash("blake2s256".to_string());
-        let commitment_scheme = make_commitment_scheme_verifier(
-            size_of_row,
-            n_rows,
-            verifier_channel.clone(),
-            0,
-            commitment_hashes,
-            n_columns,
-        );
+        let commitment_scheme =
+            make_commitment_scheme_verifier(size_of_row, n_rows, 0, commitment_hashes, n_columns);
 
-        let mut table_verifier = TableVerifier::new(n_columns, commitment_scheme, verifier_channel);
+        let mut table_verifier = TableVerifier::new(n_columns, commitment_scheme);
 
-        let _ = table_verifier.read_commitment();
+        let _ = table_verifier.read_commitment(&mut verifier_channel);
 
         let mut data_for_verification = table_verifier
-            .query(data_queries, integrity_queries)
+            .query(&mut verifier_channel, data_queries, integrity_queries)
             .unwrap();
 
         // Check all queries answered
@@ -268,7 +263,7 @@ mod tests {
         }
 
         assert!(table_verifier
-            .verify_decommitment(&data_for_verification)
+            .verify_decommitment(&mut verifier_channel, &data_for_verification)
             .unwrap());
     }
 
