@@ -15,24 +15,21 @@ use std::{collections::BTreeMap, marker::PhantomData};
 
 use super::MerkleTree;
 
-#[allow(dead_code)]
 pub struct MerkleCommitmentSchemeProver<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> {
     n_elements: usize,
     tree: MerkleTree<F, H>,
-    min_segment_bytes: usize,
     size_of_element: usize,
     queries: BTreeSet<usize>,
     phantom: PhantomData<(P, W)>,
 }
 
 impl<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> MerkleCommitmentSchemeProver<F, H, P, W> {
-    #[allow(dead_code)]
+    /// Constructs a new MerkleCommitmentSchemeProver.
     pub fn new(n_elements: usize) -> Self {
         let tree = MerkleTree::new(n_elements);
         Self {
             n_elements,
             tree,
-            min_segment_bytes: 2 * H::DIGEST_NUM_BYTES,
             size_of_element: H::DIGEST_NUM_BYTES,
             queries: BTreeSet::new(),
             phantom: PhantomData,
@@ -40,6 +37,7 @@ impl<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> MerkleCommitmentSchemeProv
     }
 }
 
+// Implement CommitmentSchemeProver trait for MerkleCommitmentSchemeProver
 impl<F, H, P, W> CommitmentSchemeProver<F, P, W> for MerkleCommitmentSchemeProver<F, H, P, W>
 where
     F: PrimeField,
@@ -101,7 +99,7 @@ pub struct MerkleCommitmentSchemeVerifier<F: PrimeField, H: Hasher<F>, P: Prng, 
 }
 
 impl<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> MerkleCommitmentSchemeVerifier<F, H, P, W> {
-    #[allow(dead_code)]
+    /// Constructs a new MerkleCommitmentSchemeVerifier.
     pub fn new(n_elements: usize) -> Self {
         Self {
             n_elements,
@@ -111,6 +109,7 @@ impl<F: PrimeField, H: Hasher<F>, P: Prng, W: Digest> MerkleCommitmentSchemeVeri
     }
 }
 
+// Implement CommitmentSchemeVerifier trait for MerkleCommitmentSchemeVerifier
 impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
     CommitmentSchemeVerifier<F, P, W> for MerkleCommitmentSchemeVerifier<F, H, P, W>
 {

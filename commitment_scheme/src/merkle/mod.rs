@@ -2,7 +2,6 @@ pub mod hash;
 pub mod merkle_commitment_scheme;
 use crate::merkle::hash::Hasher;
 use anyhow::Error;
-use thiserror::Error;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::{collections::VecDeque, marker::PhantomData};
@@ -100,12 +99,12 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>> MerkleTree<F, H> {
     ///
     /// - `merkle_root`: the commitment to the Merkle-tree
     /// - `total_data_length`: length of data to be verified
-    /// - `data_to_verify`: a set of (position, hash) pairs to verify
+    /// - `data_to_verify`: a map of (position, hash) pairs to verify
     /// - `channel`: Verifier Channel used to receive the decommitment node
     ///
     /// # Returns
     ///
-    /// Returns an Option<bool> which is true if data_to_verify is present in the tree.
+    /// Returns a bool which is true if data_to_verify is present in the tree.
     pub fn verify_decommitment<P: Prng, W: Digest>(
         merkle_root: H::Output,
         total_data_length: usize,
@@ -171,7 +170,6 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>> MerkleTree<F, H> {
     ///
     /// - `queries_idx`: BTreeSet [position] to query.
     /// - `channel`: Prover Channel used to send decommitmnet node.
-    #[allow(dead_code)]
     fn generate_decommitment<P: Prng, W: Digest>(
         &self,
         queries_idx: &BTreeSet<usize>,
@@ -234,18 +232,6 @@ pub fn bytes_as_hash<F: PrimeField, H: Hasher<F, Output = [u8; 32]>>(
         .collect();
 
     bytes_as_hash
-}
-
-/// Errors returned by Merkle Tree Verification
-#[derive(Clone, Debug, Eq, PartialEq, Error)]
-#[non_exhaustive]
-pub enum MerkleError {
-    /// returned if error in merkle proof verification
-    #[error("VerificationFail")]
-    VerificationFail,
-    /// returned if query to generate the sibilings is invalid
-    #[error("InvalidQuery")]
-    InvalidQuery,
 }
 
 #[cfg(test)]
