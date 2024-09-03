@@ -3,8 +3,7 @@ use super::fs_verifier_channel::FSVerifierChannel;
 use super::{Channel, FSChannel, ProverChannel, VerifierChannel};
 use ark_ff::PrimeField;
 use blake2::Blake2s256;
-use felt::Felt252;
-use hex_literal::hex;
+use felt::{hex, Felt252};
 use paste::paste;
 use rand::{Rng, RngCore};
 use randomness::Prng;
@@ -74,15 +73,9 @@ impl<W: Digest> TestFixtures for Poseidon3TestTypes<W> {
         TestFixtureConstants {
             seed: vec![0u8; Self::TEST_DIGEST_NUM_BYTES],
             expected_felems: vec![
-                Felt252::from_be_bytes_mod_order(&hex!(
-                    "0293d3e8a80f400daaaffdd5932e2bcc8814bab8f414a75dcacf87318f8b14c5"
-                )),
-                Felt252::from_be_bytes_mod_order(&hex!(
-                    "05134197931125e849424475aa20cd6ca0ce8603b79177c3f76e2119c8f98c53"
-                )),
-                Felt252::from_be_bytes_mod_order(&hex!(
-                    "01b33d104778bd3334a98cf66bf4dce1b919b153d40801bb98416077bc58843a"
-                )),
+                hex("0x293d3e8a80f400daaaffdd5932e2bcc8814bab8f414a75dcacf87318f8b14c5"),
+                hex("0x5134197931125e849424475aa20cd6ca0ce8603b79177c3f76e2119c8f98c53"),
+                hex("0x1b33d104778bd3334a98cf66bf4dce1b919b153d40801bb98416077bc58843a"),
             ],
             expected_random_numbers: vec![617],
         }
@@ -122,18 +115,9 @@ impl TestFixtures for Keccak256TestTypes {
             seed: vec![0u8; 4],
             // values are calculated from stone-prover/src/starkware/channel/noninteractive_channel_test.cc
             expected_felems: vec![
-                // Mont form of 0x7f097aaa40a3109067011986ae40f1ce97a01f4f1a72d80a52821f317504992_Z
-                Felt252::from_be_bytes_mod_order(&hex!(
-                    "01f75714e70bf7a81a472085588006caf99aa605bb0be098f25af56f9cb988dd"
-                )),
-                // Mont form of 0x18bcafdd60fc70e5e8a9a18687135d0bf1a355d9882969a6b3619e56bf2d49d_Z
-                Felt252::from_be_bytes_mod_order(&hex!(
-                    "060b22b317393ca6509829cf22b8379cd9607c232836ff64ac34f89d0cc6b679"
-                )),
-                // Mont form of 0x2f06b17e08bc409b945b951de8102653dc48a143b87d09b6c95587679816d02_Z
-                Felt252::from_be_bytes_mod_order(&hex!(
-                    "06225ab6b4b37edbb3bb2d694ff09fda59ae3daeafb23c93db11ddfb7511a59b"
-                )),
+                hex("0x7f097aaa40a3109067011986ae40f1ce97a01f4f1a72d80a52821f317504992"),
+                hex("0x18bcafdd60fc70e5e8a9a18687135d0bf1a355d9882969a6b3619e56bf2d49d"),
+                hex("0x2f06b17e08bc409b945b951de8102653dc48a143b87d09b6c95587679816d02"),
             ],
             expected_random_numbers: vec![851],
         }

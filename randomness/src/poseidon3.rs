@@ -89,4 +89,8 @@ impl Prng for PrngPoseidon3 {
     fn bytes_chunk_size() -> usize {
         Felt252::MODULUS_BIT_SIZE.div_ceil(8) as usize
     }
+
+    fn should_convert_from_mont_when_initialize() -> bool {
+        false
+    }
 }

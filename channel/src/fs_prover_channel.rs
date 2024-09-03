@@ -13,6 +13,7 @@ pub struct FSProverChannel<F: PrimeField, P: Prng, W: Digest> {
     pub prng: P,
     pub proof: Vec<u8>,
     pub states: ChannelStates,
+    pub mont_r_inv: F,
 }
 
 impl<F: PrimeField, P: Prng, W: Digest> FSProverChannel<F, P, W> {
@@ -22,6 +23,12 @@ impl<F: PrimeField, P: Prng, W: Digest> FSProverChannel<F, P, W> {
             prng,
             proof: vec![],
             states: Default::default(),
+            mont_r_inv: F::from_bigint(
+                <F as PrimeField>::BigInt::try_from(Self::mont_r().clone()).unwrap(),
+            )
+            .unwrap()
+            .inverse()
+            .unwrap(),
         }
     }
 }
@@ -41,6 +48,14 @@ impl<F: PrimeField, P: Prng, W: Digest> FSProverChannel<F, P, W> {
             let max = BigUint::from_bytes_be(&vec![0xff; size]);
             let quotient = max.div(&modulus);
             quotient * modulus
+        })
+    }
+
+    fn mont_r() -> &'static BigUint {
+        static R: OnceLock<BigUint> = OnceLock::new();
+        R.get_or_init(|| {
+            let size = F::MODULUS_BIT_SIZE.div_ceil(8) * 8;
+            BigUint::from(2u64).modpow(&BigUint::from(size), Self::modulus())
         })
     }
 }
@@ -76,11 +91,10 @@ impl<F: PrimeField, P: Prng, W: Digest> Channel for FSProverChannel<F, P, W> {
             }
         }
 
-        let field_element: F = Self::Field::from_bigint(
-            <Self::Field as PrimeField>::BigInt::try_from(random_biguint).unwrap(),
-        )
-        .unwrap();
-
+        let mut field_element = Self::Field::from_be_bytes_mod_order(&raw_bytes);
+        if P::should_convert_from_mont_when_initialize() {
+            field_element = field_element * self.mont_r_inv;
+        }
         field_element
     }
 }

@@ -17,4 +17,5 @@ pub trait Prng {
 
     fn digest_size() -> usize;
     fn bytes_chunk_size() -> usize;
+    fn should_convert_from_mont_when_initialize() -> bool;
 }
