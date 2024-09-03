@@ -261,11 +261,15 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
 mod tests {
 
     use super::*;
+    use crate::merkle::merkle_commitment_scheme::tests::{
+        draw_data, draw_queries, get_sparse_data,
+    };
     use crate::{
         make_commitment_scheme_prover, make_commitment_scheme_verifier, CommitmentHashes,
         SupportedHashes,
     };
     use felt::Felt252;
+    use rand::Rng;
     use randomness::keccak256::PrngKeccak256;
     use sha3::Sha3_256;
 
@@ -1741,5 +1745,172 @@ mod tests {
             corrupted_data,
             commitment_hashes,
         );
+    }
+
+    fn draw_n_segments(size_of_element: usize, n_elements: usize) -> usize {
+        let mut rng = rand::thread_rng();
+
+        let total_bytes = size_of_element * n_elements;
+        let max_n_segments = n_elements.min(usize::max(1, total_bytes / 64));
+        let max_log_n_segments = max_n_segments.ilog2() as usize;
+        if max_log_n_segments > 0 {
+            1 << rng.gen_range(0..=max_log_n_segments)
+        } else {
+            1
+        }
+    }
+
+    fn test_single_hash_with(commitment_hashes: CommitmentHashes) {
+        let mut rng = rand::thread_rng();
+
+        // Input
+        let size_of_element: usize = rng.gen_range(1..=160);
+        let n_elements = 1 << rng.gen_range(0..=10);
+        let n_segments: usize = draw_n_segments(size_of_element, n_elements);
+        let queries: BTreeSet<usize> = draw_queries(n_elements);
+        let data: Vec<u8> = draw_data(size_of_element * n_elements);
+        let elements_to_verify: BTreeMap<usize, Vec<u8>> =
+            get_sparse_data(&data, &queries, size_of_element);
+
+        let channel_prng = PrngKeccak256::new();
+
+        // Prover
+        let mut prover_channel: FSProverChannel<Felt252, PrngKeccak256, Sha3_256> =
+            FSProverChannel::new(channel_prng.clone());
+        let n_elements_in_segment = n_elements / n_segments;
+        let mut prover = make_commitment_scheme_prover(
+            size_of_element,
+            n_elements_in_segment,
+            n_segments,
+            0,
+            commitment_hashes.clone(),
+            1,
+        );
+        for i in 0..n_segments {
+            let segment = {
+                let n_segment_bytes = size_of_element * (n_elements / n_segments);
+                &data[i * n_segment_bytes..(i + 1) * n_segment_bytes]
+            };
+            prover.add_segment_for_commitment(segment, i);
+        }
+        prover.commit(&mut prover_channel).unwrap();
+        let element_idxs = prover.start_decommitment_phase(queries);
+        let elements_data: Vec<u8> = element_idxs
+            .iter()
+            .flat_map(|&idx| &data[idx * size_of_element..(idx + 1) * size_of_element])
+            .cloned()
+            .collect();
+        prover
+            .decommit(&elements_data, &mut prover_channel)
+            .unwrap();
+        let proof = prover_channel.get_proof();
+
+        // Verifier
+        let mut verifier_channel: FSVerifierChannel<Felt252, PrngKeccak256, Sha3_256> =
+            FSVerifierChannel::new(channel_prng, proof);
+
+        let mut verifier =
+            make_commitment_scheme_verifier(size_of_element, n_elements, 0, commitment_hashes, 1);
+        verifier.read_commitment(&mut verifier_channel).unwrap();
+        assert!(verifier
+            .verify_integrity(&mut verifier_channel, elements_to_verify)
+            .unwrap());
+    }
+
+    #[test]
+    fn test_single_hash_randomised() {
+        for _ in 0..20 {
+            let commitment_hashes = CommitmentHashes::from_single_hash(SupportedHashes::Keccak256);
+            test_single_hash_with(commitment_hashes);
+
+            let commitment_hashes = CommitmentHashes::from_single_hash(SupportedHashes::Blake2s256);
+            test_single_hash_with(commitment_hashes);
+        }
+    }
+
+    fn test_two_hash_with(commitment_hashes: CommitmentHashes) {
+        let mut rng = rand::thread_rng();
+
+        // Input
+        let size_of_element: usize = 32;
+        let n_elements = 64;
+        let n_segments: usize = 4;
+        let queries: BTreeSet<usize> = draw_queries(n_elements);
+        let data: Vec<u8> = draw_data(size_of_element * n_elements);
+        let elements_to_verify: BTreeMap<usize, Vec<u8>> =
+            get_sparse_data(&data, &queries, size_of_element);
+        let n_verifier_friendly_commitment_layers = rng.gen_range(2..=5);
+
+        let channel_prng = PrngKeccak256::new();
+
+        // Prover
+        let mut prover_channel: FSProverChannel<Felt252, PrngKeccak256, Sha3_256> =
+            FSProverChannel::new(channel_prng.clone());
+        let n_elements_in_segment = n_elements / n_segments;
+        let mut prover = make_commitment_scheme_prover(
+            size_of_element,
+            n_elements_in_segment,
+            n_segments,
+            n_verifier_friendly_commitment_layers,
+            commitment_hashes.clone(),
+            1,
+        );
+        for i in 0..n_segments {
+            let segment = {
+                let n_segment_bytes = size_of_element * (n_elements / n_segments);
+                &data[i * n_segment_bytes..(i + 1) * n_segment_bytes]
+            };
+            prover.add_segment_for_commitment(segment, i);
+        }
+        prover.commit(&mut prover_channel).unwrap();
+        let element_idxs = prover.start_decommitment_phase(queries);
+        let elements_data: Vec<u8> = element_idxs
+            .iter()
+            .flat_map(|&idx| &data[idx * size_of_element..(idx + 1) * size_of_element])
+            .cloned()
+            .collect();
+        prover
+            .decommit(&elements_data, &mut prover_channel)
+            .unwrap();
+        let proof = prover_channel.get_proof();
+
+        // Verifier
+        let mut verifier_channel: FSVerifierChannel<Felt252, PrngKeccak256, Sha3_256> =
+            FSVerifierChannel::new(channel_prng, proof);
+
+        let mut verifier = make_commitment_scheme_verifier(
+            size_of_element,
+            n_elements,
+            n_verifier_friendly_commitment_layers,
+            commitment_hashes,
+            1,
+        );
+        verifier.read_commitment(&mut verifier_channel).unwrap();
+        assert!(verifier
+            .verify_integrity(&mut verifier_channel, elements_to_verify)
+            .unwrap());
+    }
+
+    #[test]
+    fn test_two_hash_randomised() {
+        for _ in 0..20 {
+            let commitment_hashes = CommitmentHashes::new(
+                SupportedHashes::Blake2s256Masked160Msb,
+                SupportedHashes::Keccak256Masked160Msb,
+            );
+            test_two_hash_with(commitment_hashes);
+
+            let commitment_hashes = CommitmentHashes::new(
+                SupportedHashes::Keccak256Masked160Lsb,
+                SupportedHashes::Blake2s256Masked160Lsb,
+            );
+            test_two_hash_with(commitment_hashes);
+
+            let commitment_hashes = CommitmentHashes::new(
+                SupportedHashes::Poseidon3,
+                SupportedHashes::Blake2s256Masked160Lsb,
+            );
+            test_two_hash_with(commitment_hashes);
+        }
     }
 }

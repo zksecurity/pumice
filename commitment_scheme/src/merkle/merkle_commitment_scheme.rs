@@ -153,10 +153,11 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
-    use crate::Keccak256Hasher;
+    use crate::{merkle::hash::Blake2s256Hasher, Keccak256Hasher};
     use felt::Felt252;
+    use rand::Rng;
     use randomness::keccak256::PrngKeccak256;
     use sha3::Sha3_256;
 
@@ -394,5 +395,102 @@ mod tests {
             exp_proof,
             elements_to_verify,
         );
+    }
+
+    pub fn draw_queries(n_elements: usize) -> BTreeSet<usize> {
+        let mut rng = rand::thread_rng();
+
+        let n_queries = rng.gen_range(1..=10);
+        let mut queries = BTreeSet::new();
+
+        for _ in 0..n_queries {
+            queries.insert(rng.gen_range(0..n_elements));
+        }
+
+        queries
+    }
+
+    pub fn draw_data(len: usize) -> Vec<u8> {
+        let mut rng = rand::thread_rng();
+        let mut data = vec![0u8; len];
+        rng.fill(&mut data[..]);
+        data
+    }
+
+    pub fn get_sparse_data(
+        data: &Vec<u8>,
+        queries: &BTreeSet<usize>,
+        size_of_element: usize,
+    ) -> BTreeMap<usize, Vec<u8>> {
+        let mut elements_to_verify: BTreeMap<usize, Vec<u8>> = BTreeMap::new();
+        for q in queries {
+            let start = q * size_of_element;
+            let end = (q + 1) * size_of_element;
+            let element_bytes = data[start..end].to_vec();
+            elements_to_verify.insert(*q, element_bytes);
+        }
+        elements_to_verify
+    }
+
+    fn test_completeness_randomised_with<F, H>()
+    where
+        F: PrimeField,
+        H: Hasher<F, Output = [u8; 32]>,
+    {
+        let mut rng = rand::thread_rng();
+
+        // Input
+        let size_of_element: usize = 32;
+        let n_elements = 1 << rng.gen_range(0..=10);
+        let n_segments: usize = n_elements;
+        let queries: BTreeSet<usize> = draw_queries(n_elements);
+        let data: Vec<u8> = draw_data(size_of_element * n_elements);
+        let elements_to_verify: BTreeMap<usize, Vec<u8>> =
+            get_sparse_data(&data, &queries, size_of_element);
+
+        // Merkle Prover
+        let channel_prng = PrngKeccak256::new();
+        let mut prover_channel: FSProverChannel<F, PrngKeccak256, Sha3_256> =
+            FSProverChannel::new(channel_prng.clone());
+        let mut merkle_prover: MerkleCommitmentSchemeProver<F, H, PrngKeccak256, Sha3_256> =
+            MerkleCommitmentSchemeProver::new(n_elements);
+        for i in 0..n_segments {
+            let segment = {
+                let n_segment_bytes = size_of_element * (n_elements / n_segments);
+                &data[i * n_segment_bytes..(i + 1) * n_segment_bytes]
+            };
+            merkle_prover.add_segment_for_commitment(segment, i);
+        }
+        merkle_prover.commit(&mut prover_channel).unwrap();
+        let element_idxs = merkle_prover.start_decommitment_phase(queries);
+        let elements_data: Vec<u8> = element_idxs
+            .iter()
+            .flat_map(|&idx| &data[idx * size_of_element..(idx + 1) * size_of_element])
+            .cloned()
+            .collect();
+        merkle_prover
+            .decommit(&elements_data, &mut prover_channel)
+            .unwrap();
+        let proof = merkle_prover.get_proof(&mut prover_channel);
+
+        // Merkle Verifier
+        let mut verifier_channel: FSVerifierChannel<F, PrngKeccak256, Sha3_256> =
+            FSVerifierChannel::new(channel_prng, proof);
+        let mut merkle_verifier: MerkleCommitmentSchemeVerifier<F, H, PrngKeccak256, Sha3_256> =
+            MerkleCommitmentSchemeVerifier::new(n_elements);
+        merkle_verifier
+            .read_commitment(&mut verifier_channel)
+            .unwrap();
+        assert!(merkle_verifier
+            .verify_integrity(&mut verifier_channel, elements_to_verify)
+            .unwrap());
+    }
+
+    #[test]
+    fn test_completeness_randomised() {
+        for _ in 0..20 {
+            test_completeness_randomised_with::<Felt252, Keccak256Hasher<Felt252>>();
+            test_completeness_randomised_with::<Felt252, Blake2s256Hasher<Felt252>>();
+        }
     }
 }

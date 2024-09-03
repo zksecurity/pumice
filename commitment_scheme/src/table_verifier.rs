@@ -112,9 +112,11 @@ mod tests {
         make_commitment_scheme_prover, make_commitment_scheme_verifier, table_prover::TableProver,
         CommitmentHashes,
     };
+    use ark_ff::UniformRand;
     use channel::fs_prover_channel::FSProverChannel;
     use channel::ProverChannel;
     use felt::Felt252;
+    use rand::Rng;
     use randomness::keccak256::PrngKeccak256;
     use sha3::Sha3_256;
 
@@ -205,22 +207,11 @@ mod tests {
         n_columns: usize,
         n_segments: usize,
         n_rows_per_segment: usize,
-        exp_proof: Vec<u8>,
+        proof: Vec<u8>,
         data_queries: &BTreeSet<RowCol>,
         integrity_queries: &BTreeSet<RowCol>,
         table_data: Vec<Vec<Felt252>>,
     ) {
-        let proof = get_proof(
-            field_element_size,
-            n_columns,
-            n_segments,
-            n_rows_per_segment,
-            table_data.clone(),
-            data_queries,
-            integrity_queries,
-        );
-        assert_eq!(proof, exp_proof);
-
         let n_rows = n_rows_per_segment * n_segments;
         let size_of_row = field_element_size * n_columns;
 
@@ -336,6 +327,16 @@ mod tests {
         let data_queries = BTreeSet::from([RowCol::new(0, 0), RowCol::new(6, 0)]);
         let integrity_queries =
             BTreeSet::from([RowCol::new(2, 1), RowCol::new(7, 0), RowCol::new(11, 0)]);
+        let proof = get_proof(
+            field_element_size,
+            n_columns,
+            n_segments,
+            n_rows_per_segment,
+            table_data.clone(),
+            &data_queries,
+            &integrity_queries,
+        );
+        assert_eq!(proof, exp_proof);
         test_table_verifier_with(
             field_element_size,
             n_columns,
@@ -386,6 +387,16 @@ mod tests {
         ];
         let data_queries = BTreeSet::from([RowCol::new(1, 0)]);
         let integrity_queries = BTreeSet::from([RowCol::new(1, 1)]);
+        let proof = get_proof(
+            field_element_size,
+            n_columns,
+            n_segments,
+            n_rows_per_segment,
+            table_data.clone(),
+            &data_queries,
+            &integrity_queries,
+        );
+        assert_eq!(proof, exp_proof);
         test_table_verifier_with(
             field_element_size,
             n_columns,
@@ -429,6 +440,16 @@ mod tests {
                 felt::hex("0x8e3860d765b88c45198a0389f9e70fc3f80dd4ca9e3122086f3b2fd46cd49b"),
             ],
         ];
+        let proof = get_proof(
+            field_element_size,
+            n_columns,
+            n_segments,
+            n_rows_per_segment,
+            table_data.clone(),
+            &data_queries,
+            &integrity_queries,
+        );
+        assert_eq!(proof, exp_proof);
         test_table_verifier_with(
             field_element_size,
             n_columns,
@@ -471,7 +492,16 @@ mod tests {
                 felt::hex("0x710ebb17fed7802bd2b4c93bb1b28815d464e727bec23beb4df16f42c6e8fd3"),
             ],
         ];
-
+        let proof = get_proof(
+            field_element_size,
+            n_columns,
+            n_segments,
+            n_rows_per_segment,
+            table_data.clone(),
+            &data_queries,
+            &integrity_queries,
+        );
+        assert_eq!(proof, exp_proof);
         test_table_verifier_with(
             field_element_size,
             n_columns,
@@ -482,5 +512,84 @@ mod tests {
             &integrity_queries,
             table_data,
         )
+    }
+
+    fn get_random_queries(
+        n_rows: usize,
+        n_columns: usize,
+        n_data_queries: usize,
+        n_integrity_queries: usize,
+    ) -> (BTreeSet<RowCol>, BTreeSet<RowCol>) {
+        assert!(n_data_queries + n_integrity_queries < n_columns * n_rows);
+        assert!(n_columns * n_rows != 0);
+
+        let mut rng = rand::thread_rng();
+
+        let mut data_queries_out = BTreeSet::new();
+        let mut integrity_queries_out = BTreeSet::new();
+
+        // Generate random data queries.
+        while data_queries_out.len() < n_data_queries {
+            let row_col = RowCol::new(rng.gen_range(0..n_rows), rng.gen_range(0..n_columns));
+            data_queries_out.insert(row_col);
+        }
+
+        // Generate random integrity queries.
+        while integrity_queries_out.len() < n_integrity_queries {
+            let row_col = RowCol::new(rng.gen_range(0..n_rows), rng.gen_range(0..n_columns));
+            // Make sure data and integrity queries are distinct.
+            if !data_queries_out.contains(&row_col) {
+                integrity_queries_out.insert(row_col);
+            }
+        }
+
+        (data_queries_out, integrity_queries_out)
+    }
+
+    #[test]
+    fn test_table_verifier_randomised() {
+        for _ in 0..20 {
+            let mut rng = rand::thread_rng();
+
+            let field_element_size = 32;
+            let n_columns = 6;
+            let n_segments = 128;
+            let n_rows_per_segment = 8;
+            let n_rows = n_rows_per_segment * n_segments;
+
+            let mut table_data: Vec<Vec<Felt252>> = Vec::with_capacity(n_columns);
+            for _ in 0..n_columns {
+                let mut col: Vec<Felt252> = Vec::with_capacity(n_rows);
+                for _ in 0..n_rows {
+                    let random_felt = Felt252::rand(&mut rng);
+                    col.push(random_felt);
+                }
+
+                table_data.push(col);
+            }
+
+            let (data_queries, integrity_queries) = get_random_queries(n_rows, n_columns, 3, 5);
+
+            let proof = get_proof(
+                field_element_size,
+                n_columns,
+                n_segments,
+                n_rows_per_segment,
+                table_data.clone(),
+                &data_queries,
+                &integrity_queries,
+            );
+
+            test_table_verifier_with(
+                field_element_size,
+                n_columns,
+                n_segments,
+                n_rows_per_segment,
+                proof,
+                &data_queries,
+                &integrity_queries,
+                table_data,
+            );
+        }
     }
 }
