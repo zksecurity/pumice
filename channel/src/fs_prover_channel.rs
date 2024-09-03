@@ -93,7 +93,7 @@ impl<F: PrimeField, P: Prng, W: Digest> Channel for FSProverChannel<F, P, W> {
 
         let mut field_element = Self::Field::from_be_bytes_mod_order(&raw_bytes);
         if P::should_convert_from_mont_when_initialize() {
-            field_element = field_element * self.mont_r_inv;
+            field_element.mul_assign(self.mont_r_inv);
         }
         field_element
     }
