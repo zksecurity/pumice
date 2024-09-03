@@ -30,15 +30,8 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>> PackerHasher<F, H> {
             compute_num_elements_in_package(size_of_element, 2 * H::DIGEST_NUM_BYTES, n_elements);
         let n_packages = n_elements / n_elements_in_package;
 
-        assert!(
-            n_elements != 0 && (n_elements & (n_elements - 1)) == 0,
-            "n_elements is not a power of two."
-        );
-        assert!(
-            n_elements_in_package != 0
-                && (n_elements_in_package & (n_elements_in_package - 1)) == 0,
-            "n_elements_in_package is not a power of two."
-        );
+        assert!(n_elements.is_power_of_two());
+        assert!(n_elements_in_package.is_power_of_two());
         assert!(n_elements >= n_elements_in_package);
 
         Self {
@@ -245,14 +238,13 @@ pub fn hash_elements<F: PrimeField, H: Hasher<F, Output = [u8; 32]>>(
 
     let element_size = data.len() / n_elements;
     let mut res = Vec::with_capacity(n_elements * H::DIGEST_NUM_BYTES);
-    let mut pos = 0;
 
-    for _ in 0..n_elements {
-        let end_pos = pos + element_size;
-        let chunk = &data[pos..end_pos];
+    let chunks = data.chunks_exact(element_size);
+    assert!(chunks.remainder().is_empty());
+
+    for chunk in chunks {
         let mut hash_as_bytes_array = H::hash_bytes(chunk).to_vec();
         res.append(&mut hash_as_bytes_array);
-        pos = end_pos;
     }
 
     res
