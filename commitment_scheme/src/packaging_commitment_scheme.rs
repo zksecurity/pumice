@@ -24,10 +24,10 @@ pub struct PackagingCommitmentSchemeProver<F: PrimeField, H: Hasher<F>, P: Prng,
     n_missing_elements_for_inner_layer: usize,
 }
 
-#[allow(dead_code)]
 impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
     PackagingCommitmentSchemeProver<F, H, P, W>
 {
+    /// Constructs a new PackagingCommitmentSchemeProver.
     pub fn new(
         size_of_element: usize,
         n_elements_in_segment: usize,
@@ -56,16 +56,9 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
             n_missing_elements_for_inner_layer: 0,
         }
     }
-
-    fn get_num_of_packages(&self) -> usize {
-        self.packer.n_packages
-    }
-
-    fn get_is_merkle_layer(&self) -> bool {
-        self.is_merkle_layer
-    }
 }
 
+// Implement CommitmentSchemeProver trait for PackagingCommitmentSchemeProver
 impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
     CommitmentSchemeProver<F, P, W> for PackagingCommitmentSchemeProver<F, H, P, W>
 {
@@ -180,7 +173,6 @@ pub struct PackagingCommitmentSchemeVerifier<F: PrimeField, H: Hasher<F>, P: Prn
     is_merkle_layer: bool,
 }
 
-#[allow(dead_code)]
 impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
     PackagingCommitmentSchemeVerifier<F, H, P, W>
 {
@@ -191,7 +183,7 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
     /// - `size_of_element`: length of element in bytes.
     /// - `n_elements`: number of elements.
     /// - `channel`: Fiat-Shamir verifier channel
-    /// - `inner_commitment_scheme_factory`: commitment scheme verifier factory
+    /// - `inner_commitment_scheme`: commitment scheme verifier
     /// - `is_merkle_layer`: flag to indicate Merkle layer.
     ///
     /// # Returns
@@ -216,14 +208,6 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>, P: Prng, W: Digest>
             inner_commitment_scheme,
             is_merkle_layer,
         }
-    }
-
-    fn get_num_of_packages(&self) -> usize {
-        self.packer.n_packages
-    }
-
-    fn get_is_merkle_layer(&self) -> bool {
-        self.is_merkle_layer
     }
 }
 
