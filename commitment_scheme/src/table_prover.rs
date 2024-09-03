@@ -7,10 +7,6 @@ use randomness::Prng;
 use sha3::Digest;
 use std::collections::BTreeSet;
 
-/// TableProverFactory is a function that creates an instance of TableProver.
-#[allow(dead_code)]
-type TableProverFactory<F, P, W> = fn(usize, usize, usize) -> TableProver<F, P, W>;
-
 pub struct TableProver<F: PrimeField, P: Prng, W: Digest> {
     n_columns: usize,
     commitment_scheme: Box<dyn CommitmentSchemeProver<F, P, W>>,
@@ -163,16 +159,11 @@ fn serialize_field_columns<F: PrimeField>(segment: &[Vec<F>]) -> Vec<u8> {
     let element_size_in_bytes = F::MODULUS_BIT_SIZE.div_ceil(8) as usize;
     let n_bytes_row = n_columns * element_size_in_bytes;
 
-    let mut serialization = vec![0u8; n_rows * n_bytes_row];
+    let mut serialization = Vec::with_capacity(n_rows * n_bytes_row);
 
     for row in 0..n_rows {
-        for (col, col_data) in columns.iter().enumerate().take(n_columns) {
-            let element_idx = row * n_columns + col;
-            let element_byte_idx = element_idx * element_size_in_bytes;
-            let element_bytes = &col_data[row].into_bigint().to_bytes_be();
-
-            serialization[element_byte_idx..element_byte_idx + element_size_in_bytes]
-                .copy_from_slice(element_bytes);
+        for col_data in columns.iter().take(n_columns) {
+            serialization.extend_from_slice(&col_data[row].into_bigint().to_bytes_be());
         }
     }
 

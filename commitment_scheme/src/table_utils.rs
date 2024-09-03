@@ -45,14 +45,11 @@ pub fn all_query_rows(
     data_queries: &BTreeSet<RowCol>,
     integrity_queries: &BTreeSet<RowCol>,
 ) -> BTreeSet<usize> {
-    let mut all_query_rows = BTreeSet::new();
-    for query in data_queries.iter() {
-        all_query_rows.insert(query.get_row());
-    }
-    for query in integrity_queries.iter() {
-        all_query_rows.insert(query.get_row());
-    }
-    all_query_rows
+    std::iter::empty()
+        .chain(data_queries)
+        .chain(integrity_queries)
+        .map(|q| q.get_row())
+        .collect()
 }
 
 /// Returns a list of RowCol pointing to the field elements

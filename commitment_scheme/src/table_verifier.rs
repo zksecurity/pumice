@@ -8,10 +8,6 @@ use randomness::Prng;
 use sha3::Digest;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// TableVerifierFactory is a function that creates an instance of TableVerifier.
-#[allow(dead_code)]
-type TableVerifierFactory<F, P, W> = fn(usize, usize) -> TableVerifier<F, P, W>;
-
 pub struct TableVerifier<F: PrimeField, P: Prng, W: Digest> {
     n_columns: usize,
     commitment_scheme: Box<dyn CommitmentSchemeVerifier<F, P, W>>,
@@ -80,8 +76,7 @@ impl<F: PrimeField, P: Prng, W: Digest> TableVerifier<F, P, W> {
         while let Some((&row_col, _value)) = all_rows_it.peek() {
             // Insert a new vector in the integrity_map with the current row number as the key.
             let cur_row = row_col.get_row();
-            let mut row_data = vec![0u8; self.n_columns * element_size];
-            let mut pos = 0;
+            let mut row_data = Vec::with_capacity(self.n_columns * element_size);
 
             for _ in 0..self.n_columns {
                 if let Some((&row_col_next, field_element)) = all_rows_it.next() {
@@ -92,10 +87,10 @@ impl<F: PrimeField, P: Prng, W: Digest> TableVerifier<F, P, W> {
                     );
                     // Copy the field element bytes into the appropriate position in row_data.
                     let field_bytes = field_element.into_bigint().to_bytes_be();
-                    row_data[pos..pos + element_size].copy_from_slice(&field_bytes);
-                    pos += element_size;
+                    assert_eq!(field_bytes.len(), element_size);
+                    row_data.extend_from_slice(&field_bytes);
                 } else {
-                    panic!("Not enough columns in the map.");
+                    return Err(anyhow::anyhow!("Not enough columns in the map."));
                 }
             }
 
