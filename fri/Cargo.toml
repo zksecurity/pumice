@@ -10,3 +10,5 @@ felt = { path = "../felt" }
 randomness = { path = "../randomness" }
 channel = { path = "../channel" }
 sha3.workspace = true
+serde_json.workspace = true
+serde.workspace = true
