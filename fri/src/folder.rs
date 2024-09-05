@@ -20,6 +20,6 @@ impl MultiplicativeFriFolder {
 }
 
 #[allow(dead_code)]
-pub fn fri_folder_from_field<F: FftField>() -> Arc<MultiplicativeFriFolder> {
+pub fn fri_folder_from_field() -> Arc<MultiplicativeFriFolder> {
     Arc::new(MultiplicativeFriFolder)
 }
