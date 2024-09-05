@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use ark_ff::FftField;
 use ark_poly::EvaluationDomain;
 // use serde::Deserialize;
@@ -6,6 +8,7 @@ use serde_json::Value as JsonValue;
 //#[derive(Deserialize)]
 #[allow(dead_code)]
 pub struct FriParameters<F: FftField, E: EvaluationDomain<F>> {
+    pub ph: PhantomData<F>,
     /*
       A list of fri_step_i (one per FRI layer). FRI reduction in the i-th layer will be 2^fri_step_i
       and the total reduction factor will be $2^{\sum_i \fri_step_i}$. The size of fri_step_list is
@@ -39,7 +42,6 @@ pub struct FriParameters<F: FftField, E: EvaluationDomain<F>> {
     pub last_layer_degree_bound: u64,
     pub n_queries: usize,
     pub fft_domains: Vec<E>,
-    pub field: F,
 
     /*
       If greater than 0, used to apply proof of work right before randomizing the FRI queries. Since
@@ -51,8 +53,26 @@ pub struct FriParameters<F: FftField, E: EvaluationDomain<F>> {
 
 #[allow(dead_code)]
 impl<F: FftField, E: EvaluationDomain<F>> FriParameters<F, E> {
-    pub fn from_json(json: &JsonValue, fft_domains: &[E], field: F) -> Self {
+    pub fn new(
+        fri_step_list: Vec<usize>,
+        last_layer_degree_bound: u64,
+        n_queries: usize,
+        fft_domains: Vec<E>,
+        proof_of_work_bits: usize,
+    ) -> Self {
         FriParameters {
+            ph: PhantomData,
+            fri_step_list,
+            last_layer_degree_bound,
+            n_queries,
+            fft_domains,
+            proof_of_work_bits,
+        }
+    }
+
+    pub fn from_json(json: &JsonValue, fft_domains: Vec<E>) -> Self {
+        FriParameters {
+            ph: PhantomData,
             fri_step_list: json["fri_step_list"]
                 .as_array()
                 .unwrap()
@@ -61,8 +81,7 @@ impl<F: FftField, E: EvaluationDomain<F>> FriParameters<F, E> {
                 .collect(),
             last_layer_degree_bound: json["last_layer_degree_bound"].as_u64().unwrap(),
             n_queries: json["n_queries"].as_u64().unwrap() as usize,
-            fft_domains: fft_domains.to_vec(),
-            field,
+            fft_domains,
             proof_of_work_bits: json["proof_of_work_bits"].as_u64().unwrap() as usize,
         }
     }

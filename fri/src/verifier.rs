@@ -42,9 +42,9 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
         params: FriParameters<F, Radix2EvaluationDomain<F>>,
         commitment_hashes: CommitmentHashes,
         first_layer_callback: FirstLayerQueriesCallback<F>,
-        n_layers: usize,
     ) -> Self {
-        let n_queries: usize = params.n_queries;
+        let n_queries = params.n_queries;
+        let n_layers = params.fri_step_list.len();
         Self {
             channel,
             params,
@@ -118,5 +118,91 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
 
     pub fn read_last_layer_coefficients(&mut self) -> Result<(), Box<dyn Error>> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod fri_tests {
+    use ark_poly::{
+        domain::EvaluationDomain, univariate::DensePolynomial, DenseUVPolynomial, Polynomial,
+        Radix2EvaluationDomain,
+    };
+    use channel::{fs_prover_channel::FSProverChannel, Channel};
+    use commitment_scheme::SupportedHashes;
+    use felt::Felt252;
+    use randomness::{keccak256::PrngKeccak256, Prng};
+    use sha3::Sha3_256;
+
+    use super::*;
+
+    type TestProverChannel = FSProverChannel<Felt252, PrngKeccak256, Sha3_256>;
+    type TestVerifierChannel = FSVerifierChannel<Felt252, PrngKeccak256, Sha3_256>;
+
+    fn generate_verifier_channel() -> TestVerifierChannel {
+        let prng = PrngKeccak256::new_with_seed(&[0u8; 4]);
+        TestVerifierChannel::new(prng, vec![])
+    }
+
+    fn generate_prover_channel() -> TestProverChannel {
+        let prng = PrngKeccak256::new_with_seed(&[0u8; 4]);
+        TestProverChannel::new(prng)
+    }
+
+    fn gen_random_field_element(prover_channel: &mut TestProverChannel) -> Felt252 {
+        prover_channel.draw_felem()
+    }
+
+    #[test]
+    fn commitment_phase() {
+        let mut test_prover_channel = generate_prover_channel();
+
+        let last_layer_degree_bound = 5;
+        let proof_of_work_bits = 15;
+        let domain_size_log = 10;
+
+        let offset = gen_random_field_element(&mut test_prover_channel);
+        let domains: Vec<Radix2EvaluationDomain<Felt252>> = (0..=domain_size_log)
+            .rev()
+            .map(|i| {
+                Radix2EvaluationDomain::<Felt252>::new(1 << i)
+                    .unwrap()
+                    .get_coset(offset)
+                    .unwrap()
+            })
+            .collect();
+        // check domains size is domain_size_log + 1
+        assert_eq!(domains.len(), domain_size_log + 1);
+
+        let params = FriParameters::new(
+            vec![2, 3, 1],
+            last_layer_degree_bound,
+            2,
+            domains.clone(),
+            proof_of_work_bits,
+        );
+
+        let poly_coeffs: Vec<Felt252> = (0..64 * last_layer_degree_bound)
+            .map(|_| gen_random_field_element(&mut test_prover_channel))
+            .collect();
+
+        let test_layer = DensePolynomial::from_coefficients_vec(poly_coeffs);
+        // i will use this later
+        let _witness: Vec<Felt252> = domains[0]
+            .elements()
+            .map(|x| test_layer.evaluate(&x))
+            .collect();
+
+        // Choose evaluation points for the three layers
+        let _eval_points: Vec<Felt252> = (0..3)
+            .map(|_| gen_random_field_element(&mut test_prover_channel))
+            .collect();
+
+        // verifier channel
+        let test_verifier_channel = generate_verifier_channel();
+        let commitment_hashes = CommitmentHashes::from_single_hash(SupportedHashes::Blake2s256);
+
+        let mut fri_verifier =
+            FriVerifier::new(test_verifier_channel, params, commitment_hashes, |_| vec![]);
+        fri_verifier.commitment_phase().unwrap();
     }
 }
