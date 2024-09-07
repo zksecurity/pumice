@@ -7,9 +7,9 @@ pub fn get_field_element_at_index<F: FftField, E: EvaluationDomain<F>>(
 ) -> F {
     // loop index with divide by 2
     let mut i = index;
-    let mut s = (domain.size() / 2) as usize;
+    let mut s = domain.size() / 2;
     let mut new_index = 0;
-    while index > 0 {
+    while i > 0 {
         if i & 1 != 0 {
             new_index += s;
         }

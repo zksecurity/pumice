@@ -6,11 +6,13 @@ use randomness::Prng;
 use sha3::Digest;
 
 use crate::{
-    details::{apply_fri_layers, second_layer_queries_to_first_layer_queries},
+    details::{
+        apply_fri_layers, choose_query_indices, second_layer_queries_to_first_layer_queries,
+    },
     lde::MultiplicativeLDE,
     parameters::FriParameters,
 };
-use channel::{fs_verifier_channel::FSVerifierChannel, Channel, FSChannel, VerifierChannel};
+use channel::{fs_verifier_channel::FSVerifierChannel, Channel, VerifierChannel};
 use commitment_scheme::{
     make_commitment_scheme_verifier, table_verifier::TableVerifier, CommitmentHashes,
 };
@@ -69,7 +71,7 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
         self.commitment_phase()?;
 
         // query phase
-        self.query_indices = self.choose_query_indices();
+        self.query_indices = choose_query_indices(&self.params, &mut self.channel);
         self.channel.states.begin_query_phase();
 
         // decommitment phase
@@ -101,23 +103,6 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
             );
             self.query_results.push(result);
         }
-    }
-
-    fn choose_query_indices(&mut self) -> Vec<u64> {
-        let domain_size = self.params.fft_domains[self.params.fri_step_list[0]].size();
-        let n_queries = self.params.n_queries;
-        let proof_of_work_bits = self.params.proof_of_work_bits;
-
-        let _ = self.channel.apply_proof_of_work(proof_of_work_bits);
-
-        let mut query_indices = Vec::with_capacity(n_queries);
-        for _ in 0..n_queries {
-            let random_index = self.channel.draw_number(domain_size as u64);
-            query_indices.push(random_index);
-        }
-
-        query_indices.sort_unstable();
-        query_indices
     }
 
     pub fn commitment_phase(&mut self) -> Result<(), Box<dyn Error>> {

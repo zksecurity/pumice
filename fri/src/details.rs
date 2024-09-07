@@ -1,5 +1,7 @@
-use ark_ff::FftField;
+use ark_ff::{FftField, PrimeField};
 use ark_poly::EvaluationDomain;
+use channel::FSChannel;
+use sha3::Digest;
 
 use crate::stone_domain::get_field_element_at_index;
 use crate::{folder::MultiplicativeFriFolder, parameters::FriParameters};
@@ -56,7 +58,7 @@ pub fn apply_fri_layers<F: FftField, E: EvaluationDomain<F>>(
                     &cur_layer[j],
                     &cur_layer[j + 1],
                     &curr_eval_point.unwrap(),
-                    &get_field_element_at_index(&fft_domain, first_element_index + j as usize),
+                    &get_field_element_at_index(&fft_domain, first_element_index + j),
                 ),
             );
         }
@@ -69,4 +71,24 @@ pub fn apply_fri_layers<F: FftField, E: EvaluationDomain<F>>(
 
     assert_eq!(cur_layer.len(), 1, "Expected number of elements to be one.");
     cur_layer[0]
+}
+
+pub fn choose_query_indices<F: FftField + PrimeField, E: EvaluationDomain<F>, W: Digest>(
+    params: &FriParameters<F, E>,
+    channel: &mut dyn FSChannel<Field = F, PowHash = W>,
+) -> Vec<u64> {
+    let domain_size = params.fft_domains[params.fri_step_list[0]].size();
+    let n_queries = params.n_queries;
+    let proof_of_work_bits = params.proof_of_work_bits;
+
+    let _ = channel.apply_proof_of_work(proof_of_work_bits);
+
+    let mut query_indices = Vec::with_capacity(n_queries);
+    for _ in 0..n_queries {
+        let random_index = channel.draw_number(domain_size as u64);
+        query_indices.push(random_index);
+    }
+
+    query_indices.sort_unstable();
+    query_indices
 }
