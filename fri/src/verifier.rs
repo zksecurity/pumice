@@ -5,8 +5,12 @@ use ark_poly::{domain::EvaluationDomain, Radix2EvaluationDomain};
 use randomness::Prng;
 use sha3::Digest;
 
-use crate::{lde::MultiplicativeLDE, parameters::FriParameters};
-use channel::{fs_verifier_channel::FSVerifierChannel, Channel, VerifierChannel};
+use crate::{
+    details::{apply_fri_layers, second_layer_queries_to_first_layer_queries},
+    lde::MultiplicativeLDE,
+    parameters::FriParameters,
+};
+use channel::{fs_verifier_channel::FSVerifierChannel, Channel, FSChannel, VerifierChannel};
 use commitment_scheme::{
     make_commitment_scheme_verifier, table_verifier::TableVerifier, CommitmentHashes,
 };
@@ -61,19 +65,59 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
     }
 
     pub fn verify_fri(&mut self) -> Result<(), Box<dyn Error>> {
+        // commitment phase
         self.commitment_phase()?;
 
-        // // query phase
-        //self.query_indices = self.choose_query_indices();
-        // //self.channel.begin_query_phase();
+        // query phase
+        self.query_indices = self.choose_query_indices();
+        self.channel.states.begin_query_phase();
 
-        // // decommitment phase
-        // // TODO : annotation
-
-        // self.verify_first_layer();
+        // decommitment phase
+        self.verify_first_layer();
         // self.verify_inner_layers();
         // self.verify_last_layer();
         Ok(())
+    }
+
+    pub fn verify_first_layer(&mut self) {
+        let first_fri_step = self.params.fri_step_list[0];
+        let first_layer_queries =
+            second_layer_queries_to_first_layer_queries(&self.query_indices, first_fri_step);
+        let first_layer_result = (self.first_layer_callback)(&first_layer_queries);
+
+        assert_eq!(
+            first_layer_result.len(),
+            first_layer_queries.len(),
+            "Returned number of queries does not match the number sent"
+        );
+        let first_layer_coset_size = 1 << first_fri_step;
+        for i in (0..first_layer_queries.len()).step_by(first_layer_coset_size) {
+            let result = apply_fri_layers(
+                &first_layer_result[i..i + first_layer_coset_size],
+                self.first_eval_point,
+                &self.params,
+                0,
+                first_layer_queries[i] as usize,
+            );
+            self.query_results.push(result);
+        }
+    }
+
+    fn choose_query_indices(&mut self) -> Vec<u64> {
+        let domain_size = self.params.fft_domains[self.params.fri_step_list[0]].size();
+        let n_queries = self.params.n_queries;
+        let proof_of_work_bits = self.params.proof_of_work_bits;
+
+        let _ = self.channel.apply_proof_of_work(proof_of_work_bits);
+
+        let mut query_indices = Vec::with_capacity(n_queries);
+        for _ in 0..n_queries {
+            let random_index = self.channel.draw_number(domain_size as u64);
+            query_indices.push(random_index);
+        }
+
+        query_indices.sort_unstable();
+        query_indices
     }
 
     pub fn commitment_phase(&mut self) -> Result<(), Box<dyn Error>> {

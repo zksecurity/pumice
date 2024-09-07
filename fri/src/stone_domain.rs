@@ -1,6 +1,24 @@
 use ark_ff::FftField;
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 
+pub fn get_field_element_at_index<F: FftField, E: EvaluationDomain<F>>(
+    domain: &E,
+    index: usize,
+) -> F {
+    // loop index with divide by 2
+    let mut i = index;
+    let mut s = (domain.size() / 2) as usize;
+    let mut new_index = 0;
+    while index > 0 {
+        if i & 1 != 0 {
+            new_index += s;
+        }
+        i >>= 1;
+        s >>= 1;
+    }
+    domain.elements().nth(new_index).unwrap()
+}
+
 // change order of elements in domain
 pub fn change_order_of_elements_in_domain<F: FftField>(elements: &[F]) -> Vec<F> {
     assert!(elements.len().is_power_of_two());
