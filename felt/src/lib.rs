@@ -1,4 +1,6 @@
 use ark_ff::Zero;
+use ark_ff::{BigInteger, PrimeField};
+use std::fmt::Write;
 
 pub use container::Felt252;
 
@@ -34,6 +36,19 @@ pub fn hex(hex: &str) -> Felt252 {
         res += Felt252::from(val as u64);
     }
     res
+}
+
+pub fn felt_252_to_hex<F: PrimeField>(felt: &F) -> String {
+    let bigint = felt.into_bigint().to_bytes_be();
+    let hex_string = bigint.iter().fold(String::new(), |mut output, b| {
+        let _ = write!(output, "{:02x}", b);
+        output
+    });
+
+    // remove leading 0
+    let hex_string = hex_string.trim_start_matches('0').to_string();
+    // add leading 0x
+    format!("0x{}", hex_string)
 }
 
 #[cfg(test)]
