@@ -79,7 +79,7 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
         // decommitment phase
         self.verify_first_layer();
         self.verify_inner_layers();
-        // self.verify_last_layer();
+        self.verify_last_layer();
         Ok(())
     }
 
@@ -136,8 +136,7 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
                 );
 
                 for k in 0..coset_size {
-                    coset_elements
-                        .push(to_verify.get(&RowCol::new(coset_start, k)).unwrap().clone());
+                    coset_elements.push(*to_verify.get(&RowCol::new(coset_start, k)).unwrap());
                 }
 
                 self.query_results[j] = apply_fri_layers(
@@ -145,7 +144,7 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
                     Some(eval_point),
                     &self.params,
                     i + 1,
-                    (coset_start as usize) * (1 << cur_fri_step),
+                    coset_start * (1 << cur_fri_step),
                 );
             }
 
@@ -155,6 +154,27 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
                     .unwrap(),
                 "Layer {} failed decommitment",
                 i
+            );
+        }
+    }
+
+    pub fn verify_last_layer(&self) {
+        let first_fri_step = self.params.fri_step_list[0];
+        let fri_step_sum: usize = self.params.fri_step_list.iter().sum();
+
+        assert!(
+            self.expected_last_layer.is_some(),
+            "ReadLastLayer() must be called before VerifyLastLayer()."
+        );
+
+        for (j, &query_result) in self.query_results.iter().enumerate() {
+            let query_index = self.query_indices[j] >> (fri_step_sum - first_fri_step);
+            let expected_value = self.expected_last_layer.as_ref().unwrap()[query_index as usize];
+
+            assert_eq!(
+                query_result, expected_value,
+                "FRI query #{} is not consistent with the coefficients of the last layer.",
+                j
             );
         }
     }

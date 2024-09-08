@@ -135,9 +135,9 @@ pub fn get_table_prover_row_col(query_index: u64, fri_step: usize) -> RowCol {
 }
 
 pub fn get_table_prover_row(query_index: u64, fri_step: usize) -> usize {
-    return (query_index >> fri_step) as usize;
+    (query_index >> fri_step) as usize
 }
 
 pub fn get_table_prover_col(query_index: u64, fri_step: usize) -> usize {
-    return (query_index & ((1 << fri_step) - 1)) as usize;
+    (query_index & ((1 << fri_step) - 1)) as usize
 }
