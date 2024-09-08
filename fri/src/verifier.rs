@@ -7,14 +7,16 @@ use sha3::Digest;
 
 use crate::{
     details::{
-        apply_fri_layers, choose_query_indices, second_layer_queries_to_first_layer_queries,
+        apply_fri_layers, choose_query_indices, get_table_prover_row,
+        next_layer_data_and_integrity_queries, second_layer_queries_to_first_layer_queries,
     },
     lde::MultiplicativeLDE,
     parameters::FriParameters,
 };
 use channel::{fs_verifier_channel::FSVerifierChannel, Channel, VerifierChannel};
 use commitment_scheme::{
-    make_commitment_scheme_verifier, table_verifier::TableVerifier, CommitmentHashes,
+    make_commitment_scheme_verifier, table_utils::RowCol, table_verifier::TableVerifier,
+    CommitmentHashes,
 };
 
 #[allow(dead_code)]
@@ -76,7 +78,7 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
 
         // decommitment phase
         self.verify_first_layer();
-        // self.verify_inner_layers();
+        self.verify_inner_layers();
         // self.verify_last_layer();
         Ok(())
     }
@@ -102,6 +104,58 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
                 first_layer_queries[i] as usize,
             );
             self.query_results.push(result);
+        }
+    }
+
+    pub fn verify_inner_layers(&mut self) {
+        let first_fri_step = self.params.fri_step_list[0];
+        let mut basis_index = 0;
+
+        for i in 0..self.n_layers - 1 {
+            let cur_fri_step = self.params.fri_step_list[i + 1];
+            basis_index += self.params.fri_step_list[i];
+
+            let (layer_data_queries, layer_integrity_queries) =
+                next_layer_data_and_integrity_queries(&self.params, &self.query_indices, i + 1);
+
+            let to_verify = self.table_verifiers[i]
+                .query(
+                    &mut self.channel,
+                    &layer_data_queries,
+                    &layer_integrity_queries,
+                )
+                .unwrap();
+
+            let eval_point = self.eval_points[i];
+            for j in 0..self.query_results.len() {
+                let coset_size = 1 << cur_fri_step;
+                let mut coset_elements: Vec<F> = Vec::with_capacity(coset_size);
+                let coset_start = get_table_prover_row(
+                    self.query_indices[j] >> (basis_index - first_fri_step),
+                    cur_fri_step,
+                );
+
+                for k in 0..coset_size {
+                    coset_elements
+                        .push(to_verify.get(&RowCol::new(coset_start, k)).unwrap().clone());
+                }
+
+                self.query_results[j] = apply_fri_layers(
+                    &coset_elements,
+                    Some(eval_point),
+                    &self.params,
+                    i + 1,
+                    (coset_start as usize) * (1 << cur_fri_step),
+                );
+            }
+
+            assert!(
+                self.table_verifiers[i]
+                    .verify_decommitment(&mut self.channel, &to_verify)
+                    .unwrap(),
+                "Layer {} failed decommitment",
+                i
+            );
         }
     }
 

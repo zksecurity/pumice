@@ -1,6 +1,9 @@
+use std::collections::BTreeSet;
+
 use ark_ff::{FftField, PrimeField};
 use ark_poly::EvaluationDomain;
 use channel::FSChannel;
+use commitment_scheme::table_utils::RowCol;
 use sha3::Digest;
 
 use crate::stone_domain::get_field_element_at_index;
@@ -91,4 +94,50 @@ pub fn choose_query_indices<F: FftField + PrimeField, E: EvaluationDomain<F>, W:
 
     query_indices.sort_unstable();
     query_indices
+}
+
+pub fn next_layer_data_and_integrity_queries<F: FftField + PrimeField, E: EvaluationDomain<F>>(
+    params: &FriParameters<F, E>,
+    query_indices: &[u64],
+    layer: usize,
+) -> (BTreeSet<RowCol>, BTreeSet<RowCol>) {
+    let cumulative_fri_step = params.fri_step_list[1..layer].iter().sum::<usize>();
+    let layer_fri_step = params.fri_step_list[layer];
+
+    let mut integrity_queries: BTreeSet<RowCol> = BTreeSet::new();
+    let mut data_queries: BTreeSet<RowCol> = BTreeSet::new();
+
+    for &idx in query_indices {
+        integrity_queries.insert(get_table_prover_row_col(
+            idx >> cumulative_fri_step,
+            layer_fri_step,
+        ));
+    }
+
+    for &idx in query_indices {
+        let coset_row = get_table_prover_row(idx >> cumulative_fri_step, layer_fri_step);
+        for coset_col in 0..(1 << layer_fri_step) {
+            let query = RowCol::new(coset_row, coset_col);
+            if !integrity_queries.contains(&query) {
+                data_queries.insert(query);
+            }
+        }
+    }
+
+    (data_queries, integrity_queries)
+}
+
+pub fn get_table_prover_row_col(query_index: u64, fri_step: usize) -> RowCol {
+    RowCol::new(
+        get_table_prover_row(query_index, fri_step),
+        get_table_prover_col(query_index, fri_step),
+    )
+}
+
+pub fn get_table_prover_row(query_index: u64, fri_step: usize) -> usize {
+    return (query_index >> fri_step) as usize;
+}
+
+pub fn get_table_prover_col(query_index: u64, fri_step: usize) -> usize {
+    return (query_index & ((1 << fri_step) - 1)) as usize;
 }

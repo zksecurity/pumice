@@ -62,7 +62,7 @@ impl<F: PrimeField, P: Prng, W: Digest> TableVerifier<F, P, W> {
     /// Given indexed field elements, verify that these field elements are indeed the ones committed to
     /// by the prover, against the commitment obtained by read_commitment().
     #[allow(dead_code)]
-    fn verify_decommitment(
+    pub fn verify_decommitment(
         &mut self,
         channel: &mut FSVerifierChannel<F, P, W>,
         all_rows_data: &BTreeMap<RowCol, F>,
