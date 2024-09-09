@@ -1,23 +1,49 @@
 use ark_ff::PrimeField;
-use ark_poly::EvaluationDomain;
+use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
+
+use crate::stone_domain::change_order_of_elements_in_domain;
 
 #[allow(dead_code)]
-pub struct MultiplicativeLDE<F: PrimeField, E: EvaluationDomain<F>> {
+pub struct MultiplicativeLDE<F: PrimeField> {
     pub ldes: Vec<Vec<F>>,
-    pub base: E,
+    pub base: Radix2EvaluationDomain<F>,
+    pub reversed_order: bool,
 }
 
 #[allow(dead_code)]
-impl<F: PrimeField, E: EvaluationDomain<F>> MultiplicativeLDE<F, E> {
-    pub fn new(base: E) -> Self {
-        Self { ldes: vec![], base }
+impl<F: PrimeField> MultiplicativeLDE<F> {
+    pub fn new(base: Radix2EvaluationDomain<F>, reversed_order: bool) -> Self {
+        Self {
+            ldes: vec![],
+            base,
+            reversed_order,
+        }
     }
 
     // Adds an evaluation on coset that was used to build the LDE.
     // Future eval invocations will add the lde of that evaluation to the results.
-    pub fn add_from_coeffs(&mut self, coeffs: &[F]) {
-        let new_lde = self.base.ifft(coeffs);
+    pub fn add_eval(&mut self, evaluation: &[F]) {
+        assert!(
+            evaluation.len() == self.base.size(),
+            "length of evaluation must be equal to base size"
+        );
+
+        let new_lde = if self.reversed_order {
+            let evaluation_order_changed = change_order_of_elements_in_domain(evaluation);
+            self.base.ifft(&evaluation_order_changed)
+        } else {
+            self.base.ifft(evaluation)
+        };
+
         self.ldes.push(new_lde);
+    }
+
+    pub fn add_coeff(&mut self, coeffs: &[F]) {
+        assert!(
+            coeffs.len() == self.base.size(),
+            "length of coeffs must be equal to base size"
+        );
+        self.ldes.push(coeffs.to_vec());
     }
 
     // Evaluates the low degree extension of the evaluation that were previously added on a given coset.
@@ -30,6 +56,11 @@ impl<F: PrimeField, E: EvaluationDomain<F>> MultiplicativeLDE<F, E> {
             evals.push(evals_lde);
         }
         evals
+    }
+
+    pub fn coeffs(&self, index: usize) -> &Vec<F> {
+        debug_assert!(index < self.ldes.len());
+        &self.ldes[index]
     }
 }
 
@@ -103,9 +134,9 @@ mod tests {
     #[test]
     fn multiplicative_lde_test() {
         let (domain, poly, src, eval_domain_offset) = setup_test_environment();
-        let mut lde = MultiplicativeLDE::new(domain);
+        let mut lde = MultiplicativeLDE::new(domain, false);
 
-        lde.add_from_coeffs(&src);
+        lde.add_eval(&src);
         let evals = lde.eval(eval_domain_offset);
         let eval_domain = domain.get_coset(eval_domain_offset).unwrap();
 
