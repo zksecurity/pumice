@@ -206,6 +206,8 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
             let query_index = self.query_indices[j] >> (fri_step_sum - first_fri_step);
             let expected_value = self.expected_last_layer.as_ref().unwrap()[query_index as usize];
 
+            println!("query_result: {:?}", felt_252_to_hex(&query_result));
+            println!("expected_value: {:?}", felt_252_to_hex(&expected_value));
             assert_eq!(
                 query_result, expected_value,
                 "FRI query #{} is not consistent with the coefficients of the last layer.",
@@ -426,6 +428,12 @@ mod fri_tests {
             hex("0x490fb8d97d64f8d4e2068a4a8845d759aed62bd79efeb2a2b34db537e49e8f0"),
         );
 
+        to_verify_test.push(BTreeMap::new());
+        to_verify_test[2].insert(
+            RowCol::new(0, 0),
+            hex("0x5bc3cf7c5240d0bc1278f7e860400521b996e88815534845421a1ebc71cbac4"),
+        );
+
         let mut fri_verifier = FriVerifier::new(
             test_verifier_channel,
             params,
@@ -449,7 +457,7 @@ mod fri_tests {
 
         fri_verifier.query_phase();
         fri_verifier.verify_first_layer();
-
         fri_verifier.verify_inner_layers();
+        fri_verifier.verify_last_layer();
     }
 }
