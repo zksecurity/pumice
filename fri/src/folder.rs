@@ -1,20 +1,21 @@
-use ark_ff::FftField;
+use ark_ff::{FftField, PrimeField};
 use std::sync::Arc;
 
 pub struct MultiplicativeFriFolder;
 
 #[allow(dead_code)]
 impl MultiplicativeFriFolder {
-    pub fn next_layer_element_from_two_previous_layer_elements<F: FftField>(
+    pub fn next_layer_element_from_two_previous_layer_elements<F: FftField + PrimeField>(
         f_x: &F,
         f_minus_x: &F,
         eval_point: &F,
-        x_inv: &F,
+        x: &F,
     ) -> F {
-        Self::fold(f_x, f_minus_x, eval_point, x_inv)
+        let x_inv = x.inverse().unwrap();
+        Self::fold(f_x, f_minus_x, eval_point, &x_inv)
     }
 
-    fn fold<F: FftField>(f_x: &F, f_minus_x: &F, eval_point: &F, x_inv: &F) -> F {
+    fn fold<F: FftField + PrimeField>(f_x: &F, f_minus_x: &F, eval_point: &F, x_inv: &F) -> F {
         *f_x + *f_minus_x + *eval_point * (*f_x - *f_minus_x) * *x_inv
     }
 }

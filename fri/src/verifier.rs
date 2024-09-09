@@ -2,6 +2,7 @@ use std::error::Error;
 
 use ark_ff::{FftField, PrimeField};
 use ark_poly::{domain::EvaluationDomain, Radix2EvaluationDomain};
+use felt::felt_252_to_hex;
 use randomness::Prng;
 use sha3::Digest;
 
@@ -31,7 +32,7 @@ pub struct FriVerifier<
     channel: FSVerifierChannel<F, P, W>,
     params: FriParameters<F, Radix2EvaluationDomain<F>>,
     commitment_hashes: CommitmentHashes,
-    first_layer_callback: FirstLayerQueriesCallback<F>,
+    first_layer_callback: Box<dyn Fn(&[u64]) -> Vec<F>>,
     n_layers: usize,
     first_eval_point: Option<F>,
     eval_points: Vec<F>,
@@ -45,19 +46,22 @@ pub struct FriVerifier<
 impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 'static>
     FriVerifier<F, P, W>
 {
-    pub fn new(
+    pub fn new<C>(
         channel: FSVerifierChannel<F, P, W>,
         params: FriParameters<F, Radix2EvaluationDomain<F>>,
         commitment_hashes: CommitmentHashes,
-        first_layer_callback: FirstLayerQueriesCallback<F>,
-    ) -> Self {
+        first_layer_callback: C,
+    ) -> Self
+    where
+        C: Fn(&[u64]) -> Vec<F> + 'static,
+    {
         let n_queries = params.n_queries;
         let n_layers = params.fri_step_list.len();
         Self {
             channel,
             params,
             commitment_hashes,
-            first_layer_callback,
+            first_layer_callback: Box::new(first_layer_callback),
             n_layers,
             first_eval_point: None,
             eval_points: vec![F::zero(); n_layers - 1],
@@ -73,8 +77,7 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
         self.commitment_phase()?;
 
         // query phase
-        self.query_indices = choose_query_indices(&self.params, &mut self.channel);
-        self.channel.states.begin_query_phase();
+        self.query_phase();
 
         // decommitment phase
         self.verify_first_layer();
@@ -83,11 +86,24 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
         Ok(())
     }
 
+    pub fn query_phase(&mut self) {
+        self.query_indices = choose_query_indices(&self.params, &mut self.channel);
+        // WARNING : FOR TESTING PURPOSES
+        self.query_indices = vec![0, 6];
+        println!("query_indices: {:?}", self.query_indices);
+        self.channel.states.begin_query_phase();
+    }
+
     pub fn verify_first_layer(&mut self) {
         let first_fri_step = self.params.fri_step_list[0];
         let first_layer_queries =
             second_layer_queries_to_first_layer_queries(&self.query_indices, first_fri_step);
+        println!("first_layer_queries: {:?}", first_layer_queries);
         let first_layer_result = (self.first_layer_callback)(&first_layer_queries);
+        // print first_layer_result by looping over it
+        for (i, result) in first_layer_result.iter().enumerate() {
+            println!("first_layer_result[{i}]: {:?}", felt_252_to_hex(result));
+        }
 
         assert_eq!(
             first_layer_result.len(),
@@ -104,6 +120,12 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
                 first_layer_queries[i] as usize,
             );
             self.query_results.push(result);
+
+            // print last query_results
+            println!(
+                "query_results[{i}]: {:?}",
+                felt_252_to_hex(self.query_results.last().unwrap())
+            );
         }
     }
 
@@ -260,7 +282,7 @@ mod fri_tests {
     use randomness::{keccak256::PrngKeccak256, Prng};
     use sha3::Sha3_256;
 
-    use crate::stone_domain::make_fft_domains;
+    use crate::stone_domain::{change_order_of_elements_in_domain, make_fft_domains};
 
     use super::*;
 
@@ -314,6 +336,8 @@ mod fri_tests {
             .map(|x| test_layer.evaluate(&x))
             .collect();
 
+        let reordered_witness = change_order_of_elements_in_domain(&_witness);
+
         let fourth_layer_evaluations = vec![
             hex("0x663aa85d164d449a2a7c04698fb3f24f1d049984c1539c7ac3b71839ce485fd"),
             hex("0x16eae1252002c24abc155c65f65cdc0df65ab85219324923be3773d1c8e99ae"),
@@ -354,8 +378,26 @@ mod fri_tests {
         let test_verifier_channel = generate_verifier_channel(&test_prover_channel);
         let commitment_hashes = CommitmentHashes::from_single_hash(SupportedHashes::Blake2s256);
 
-        let mut fri_verifier =
-            FriVerifier::new(test_verifier_channel, params, commitment_hashes, |_| vec![]);
+        let mut fri_verifier = FriVerifier::new(
+            test_verifier_channel,
+            params,
+            commitment_hashes,
+            move |_| {
+                vec![
+                    reordered_witness[0],
+                    reordered_witness[1],
+                    reordered_witness[2],
+                    reordered_witness[3],
+                    reordered_witness[24],
+                    reordered_witness[25],
+                    reordered_witness[26],
+                    reordered_witness[27],
+                ]
+            },
+        );
         fri_verifier.commitment_phase().unwrap();
+
+        fri_verifier.query_phase();
+        fri_verifier.verify_first_layer();
     }
 }

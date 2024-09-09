@@ -4,6 +4,7 @@ use ark_ff::{FftField, PrimeField};
 use ark_poly::EvaluationDomain;
 use channel::FSChannel;
 use commitment_scheme::table_utils::RowCol;
+use felt::felt_252_to_hex;
 use sha3::Digest;
 
 use crate::stone_domain::get_field_element_at_index;
@@ -26,13 +27,21 @@ pub fn second_layer_queries_to_first_layer_queries(
     first_layer_queries
 }
 
-pub fn apply_fri_layers<F: FftField, E: EvaluationDomain<F>>(
+pub fn apply_fri_layers<F: FftField + PrimeField, E: EvaluationDomain<F>>(
     elements: &[F],
     eval_point: Option<F>,
     params: &FriParameters<F, E>,
     layer_num: usize,
     mut first_element_index: usize,
 ) -> F {
+    // prints elements by looping over them
+    for (i, element) in elements.iter().enumerate() {
+        println!("elements[{i}]: {:?}", felt_252_to_hex(element));
+    }
+
+    // prints eval_point
+    println!("eval_point: {:?}", eval_point.map(|e| felt_252_to_hex(&e)));
+
     let mut curr_eval_point = eval_point;
     let mut cumulative_fri_step = 0;
     for i in 0..layer_num {
@@ -56,14 +65,13 @@ pub fn apply_fri_layers<F: FftField, E: EvaluationDomain<F>>(
 
         let mut next_layer = Vec::with_capacity(cur_layer.len() / 2);
         for j in (0..cur_layer.len()).step_by(2) {
-            next_layer.push(
-                MultiplicativeFriFolder::next_layer_element_from_two_previous_layer_elements(
-                    &cur_layer[j],
-                    &cur_layer[j + 1],
-                    &curr_eval_point.unwrap(),
-                    &get_field_element_at_index(&fft_domain, first_element_index + j),
-                ),
+            let res = MultiplicativeFriFolder::next_layer_element_from_two_previous_layer_elements(
+                &cur_layer[j],
+                &cur_layer[j + 1],
+                &curr_eval_point.unwrap(),
+                &get_field_element_at_index(&fft_domain, first_element_index + j),
             );
+            next_layer.push(res);
         }
 
         cur_layer = next_layer;

@@ -21,9 +21,10 @@ pub fn get_field_element_at_index<F: FftField, E: EvaluationDomain<F>>(
 
 // change order of elements in domain
 pub fn change_order_of_elements_in_domain<F: FftField>(elements: &[F]) -> Vec<F> {
-    assert!(elements.len().is_power_of_two());
-    let mut new_elements = vec![F::zero(); elements.len()];
-    let log_len = elements.len().trailing_zeros();
+    // get smallest power of two that is greater than elements.len()
+    let size = elements.len().next_power_of_two();
+    let mut new_elements = vec![F::zero(); size];
+    let log_len = size.trailing_zeros();
     let mapping_vec = (0..log_len)
         .map(|i| (1 << (log_len - 1 - i)))
         .collect::<Vec<usize>>();
