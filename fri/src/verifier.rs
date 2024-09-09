@@ -2,7 +2,6 @@ use std::{collections::BTreeMap, error::Error};
 
 use ark_ff::{FftField, PrimeField};
 use ark_poly::{domain::EvaluationDomain, Radix2EvaluationDomain};
-use felt::felt_252_to_hex;
 use randomness::Prng;
 use sha3::Digest;
 
@@ -21,7 +20,7 @@ use commitment_scheme::{
 };
 
 #[allow(dead_code)]
-pub type FirstLayerQueriesCallback<F> = fn(&[u64]) -> Vec<F>;
+pub type FirstLayerQueriesCallback<F> = Box<dyn Fn(&[u64]) -> Vec<F>>;
 
 #[allow(dead_code)]
 pub struct FriVerifier<
@@ -32,7 +31,7 @@ pub struct FriVerifier<
     channel: FSVerifierChannel<F, P, W>,
     params: FriParameters<F, Radix2EvaluationDomain<F>>,
     commitment_hashes: CommitmentHashes,
-    first_layer_callback: Box<dyn Fn(&[u64]) -> Vec<F>>,
+    first_layer_callback: FirstLayerQueriesCallback<F>,
     n_layers: usize,
     first_eval_point: Option<F>,
     eval_points: Vec<F>,
@@ -40,8 +39,9 @@ pub struct FriVerifier<
     query_indices: Vec<u64>,
     query_results: Vec<F>,
     expected_last_layer: Option<Vec<F>>,
-    to_verify_test: Vec<BTreeMap<RowCol, F>>,
-    eval_points_test: Vec<F>,
+    query_indices_test: Option<Vec<u64>>,
+    to_verify_test: Option<Vec<BTreeMap<RowCol, F>>>,
+    eval_points_test: Option<Vec<F>>,
 }
 
 #[allow(dead_code)]
@@ -53,8 +53,9 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
         params: FriParameters<F, Radix2EvaluationDomain<F>>,
         commitment_hashes: CommitmentHashes,
         first_layer_callback: C,
-        to_verify_test: Vec<BTreeMap<RowCol, F>>,
-        eval_points_test: Vec<F>,
+        query_indices_test: Option<Vec<u64>>,
+        to_verify_test: Option<Vec<BTreeMap<RowCol, F>>>,
+        eval_points_test: Option<Vec<F>>,
     ) -> Self
     where
         C: Fn(&[u64]) -> Vec<F> + 'static,
@@ -72,6 +73,7 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
             query_indices: vec![],
             query_results: vec![],
             expected_last_layer: None,
+            query_indices_test,
             to_verify_test,
             eval_points_test,
         }
@@ -92,10 +94,12 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
     }
 
     pub fn query_phase(&mut self) {
-        self.query_indices = choose_query_indices(&self.params, &mut self.channel);
-        // WARNING : FOR TESTING PURPOSES
-        self.query_indices = vec![0, 6];
-        println!("query_indices: {:?}", self.query_indices);
+        if self.query_indices_test.is_some() {
+            self.query_indices = self.query_indices_test.clone().unwrap();
+        } else {
+            self.query_indices = choose_query_indices(&self.params, &mut self.channel);
+        }
+
         self.channel.states.begin_query_phase();
     }
 
@@ -103,12 +107,7 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
         let first_fri_step = self.params.fri_step_list[0];
         let first_layer_queries =
             second_layer_queries_to_first_layer_queries(&self.query_indices, first_fri_step);
-        println!("first_layer_queries: {:?}", first_layer_queries);
         let first_layer_result = (self.first_layer_callback)(&first_layer_queries);
-        // print first_layer_result by looping over it
-        for (i, result) in first_layer_result.iter().enumerate() {
-            println!("first_layer_result[{i}]: {:?}", felt_252_to_hex(result));
-        }
 
         assert_eq!(
             first_layer_result.len(),
@@ -139,14 +138,17 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
             let (layer_data_queries, layer_integrity_queries) =
                 next_layer_data_and_integrity_queries(&self.params, &self.query_indices, i + 1);
 
-            // let to_verify = self.table_verifiers[i]
-            //     .query(
-            //         &mut self.channel,
-            //         &layer_data_queries,
-            //         &layer_integrity_queries,
-            //     )
-            //     .unwrap();
-            let mut to_verify = self.to_verify_test[i].clone();
+            let mut to_verify = if let Some(test_data) = self.to_verify_test.as_ref() {
+                test_data[i].clone()
+            } else {
+                self.table_verifiers[i]
+                    .query(
+                        &mut self.channel,
+                        &layer_data_queries,
+                        &layer_integrity_queries,
+                    )
+                    .unwrap()
+            };
 
             for j in 0..self.query_results.len() {
                 let query_index = self.query_indices[j] >> (basis_index - first_fri_step);
@@ -176,20 +178,17 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
                 );
             }
 
-            // print query_results by looping over it
-            for (i, result) in self.query_results.iter().enumerate() {
-                println!("self.query_results[{}]: {:?}", i, felt_252_to_hex(result));
+            if self.query_indices_test.is_some() {
+                continue;
+            } else {
+                assert!(
+                    self.table_verifiers[i]
+                        .verify_decommitment(&mut self.channel, &to_verify)
+                        .unwrap(),
+                    "Layer {} failed decommitment",
+                    i
+                );
             }
-
-            // TEST : lets say this always true
-            assert!(true);
-            // assert!(
-            //     self.table_verifiers[i]
-            //         .verify_decommitment(&mut self.channel, &to_verify)
-            //         .unwrap(),
-            //     "Layer {} failed decommitment",
-            //     i
-            // );
         }
     }
 
@@ -206,8 +205,6 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
             let query_index = self.query_indices[j] >> (fri_step_sum - first_fri_step);
             let expected_value = self.expected_last_layer.as_ref().unwrap()[query_index as usize];
 
-            println!("query_result: {:?}", felt_252_to_hex(&query_result));
-            println!("expected_value: {:?}", felt_252_to_hex(&expected_value));
             assert_eq!(
                 query_result, expected_value,
                 "FRI query #{} is not consistent with the coefficients of the last layer.",
@@ -250,9 +247,11 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
             }
         }
 
-        self.first_eval_point = Some(self.eval_points_test[0]);
-        self.eval_points[0] = self.eval_points_test[1];
-        self.eval_points[1] = self.eval_points_test[2];
+        if let Some(eval_points_test) = self.eval_points_test.as_ref() {
+            self.first_eval_point = Some(eval_points_test[0]);
+            self.eval_points[..(self.n_layers - 1)]
+                .copy_from_slice(&eval_points_test[1..((self.n_layers - 1) + 1)]);
+        }
         self.read_last_layer_coefficients()?;
         Ok(())
     }
@@ -322,7 +321,7 @@ mod fri_tests {
     }
 
     #[test]
-    fn commitment_phase() {
+    fn verifier_mock_test() {
         let mut channel_for_rng = generate_prover_channel();
         let mut test_prover_channel = generate_prover_channel();
 
@@ -450,14 +449,11 @@ mod fri_tests {
                     reordered_witness[27],
                 ]
             },
-            to_verify_test,
-            _eval_points,
+            Some(vec![0, 6]),
+            Some(to_verify_test),
+            Some(_eval_points),
         );
-        fri_verifier.commitment_phase().unwrap();
 
-        fri_verifier.query_phase();
-        fri_verifier.verify_first_layer();
-        fri_verifier.verify_inner_layers();
-        fri_verifier.verify_last_layer();
+        assert!(fri_verifier.verify_fri().is_ok());
     }
 }

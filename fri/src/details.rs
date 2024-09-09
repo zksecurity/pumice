@@ -4,7 +4,6 @@ use ark_ff::{FftField, PrimeField};
 use ark_poly::EvaluationDomain;
 use channel::FSChannel;
 use commitment_scheme::table_utils::RowCol;
-use felt::felt_252_to_hex;
 use sha3::Digest;
 
 use crate::stone_domain::get_field_element_at_index;
@@ -34,15 +33,6 @@ pub fn apply_fri_layers<F: FftField + PrimeField, E: EvaluationDomain<F>>(
     layer_num: usize,
     mut first_element_index: usize,
 ) -> F {
-    println!("apply_fri_layers");
-    // prints elements by looping over them
-    for (i, element) in elements.iter().enumerate() {
-        println!("elements[{i}]: {:?}", felt_252_to_hex(element));
-    }
-
-    // prints eval_point
-    println!("eval_point: {:?}", eval_point.map(|e| felt_252_to_hex(&e)));
-
     let mut curr_eval_point = eval_point;
     let mut cumulative_fri_step = 0;
     for i in 0..layer_num {
