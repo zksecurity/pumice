@@ -42,6 +42,7 @@ pub struct FriVerifier<
     query_indices_test: Option<Vec<u64>>,
     to_verify_test: Option<Vec<BTreeMap<RowCol, F>>>,
     eval_points_test: Option<Vec<F>>,
+    last_layer_coefficients_test: Option<Vec<F>>,
 }
 
 #[allow(dead_code)]
@@ -56,6 +57,7 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
         query_indices_test: Option<Vec<u64>>,
         to_verify_test: Option<Vec<BTreeMap<RowCol, F>>>,
         eval_points_test: Option<Vec<F>>,
+        last_layer_coefficients_test: Option<Vec<F>>,
     ) -> Self
     where
         C: Fn(&[u64]) -> Vec<F> + 'static,
@@ -76,6 +78,7 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
             query_indices_test,
             to_verify_test,
             eval_points_test,
+            last_layer_coefficients_test,
         }
     }
 
@@ -260,10 +263,16 @@ impl<F: FftField + PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 's
         let fri_step_sum: usize = self.params.fri_step_list.iter().sum();
         let last_layer_size = self.params.fft_domains[fri_step_sum].size();
 
-        let mut last_layer_coefficients_vector = self
-            .channel
-            .recv_felts(self.params.last_layer_degree_bound as usize)
-            .unwrap();
+        let mut last_layer_coefficients_vector = if let Some(last_layer_coefficients_test) =
+            self.last_layer_coefficients_test.as_ref()
+        {
+            last_layer_coefficients_test.clone()
+        } else {
+            self.channel
+                .recv_felts(self.params.last_layer_degree_bound as usize)
+                .unwrap()
+        };
+
         // pad last_layer_coefficients_vector with zeros to the size of last_layer_size
         while last_layer_coefficients_vector.len() < last_layer_size {
             last_layer_coefficients_vector.push(F::zero());
@@ -378,6 +387,11 @@ mod fri_tests {
         fourth_layer_lde.add_eval(&fourth_layer_evaluations);
         let fourth_layer_coefs = fourth_layer_lde.coeffs(0);
 
+        // check from 6th elements of fourth_layer_coefs are all zero
+        for i in 6..fourth_layer_coefs.len() {
+            assert_eq!(fourth_layer_coefs[i], Felt252::from(0u64));
+        }
+
         // Choose evaluation points for the three layers
         let _eval_points = vec![
             hex("0x7f097aaa40a3109067011986ae40f1ce97a01f4f1a72d80a52821f317504992"),
@@ -387,9 +401,6 @@ mod fri_tests {
 
         // send two dummy commitments
         let _ = test_prover_channel.send_felts(&vec![Felt252::from(1u64); 2]);
-
-        // send foruth layer coefficients to prover channel
-        let _ = test_prover_channel.send_felts(&fourth_layer_coefs);
 
         // verifier channel
         let test_verifier_channel = generate_verifier_channel(&test_prover_channel);
@@ -452,6 +463,7 @@ mod fri_tests {
             Some(vec![0, 6]),
             Some(to_verify_test),
             Some(_eval_points),
+            Some(fourth_layer_coefs.clone()),
         );
 
         assert!(fri_verifier.verify_fri().is_ok());

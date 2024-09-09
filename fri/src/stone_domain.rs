@@ -1,6 +1,7 @@
 use ark_ff::FftField;
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 
+#[allow(dead_code)]
 pub fn get_field_element_at_index<F: FftField, E: EvaluationDomain<F>>(
     domain: &E,
     index: usize,
