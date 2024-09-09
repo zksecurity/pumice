@@ -34,6 +34,7 @@ pub fn apply_fri_layers<F: FftField + PrimeField, E: EvaluationDomain<F>>(
     layer_num: usize,
     mut first_element_index: usize,
 ) -> F {
+    println!("apply_fri_layers");
     // prints elements by looping over them
     for (i, element) in elements.iter().enumerate() {
         println!("elements[{i}]: {:?}", felt_252_to_hex(element));
