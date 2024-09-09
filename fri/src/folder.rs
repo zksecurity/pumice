@@ -9,9 +9,10 @@ impl MultiplicativeFriFolder {
         f_x: &F,
         f_minus_x: &F,
         eval_point: &F,
-        x_inv: &F,
+        x: &F,
     ) -> F {
-        Self::fold(f_x, f_minus_x, eval_point, x_inv)
+        let x_inv = x.inverse().unwrap();
+        Self::fold(f_x, f_minus_x, eval_point, &x_inv)
     }
 
     fn fold<F: FftField>(f_x: &F, f_minus_x: &F, eval_point: &F, x_inv: &F) -> F {
