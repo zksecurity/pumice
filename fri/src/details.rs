@@ -9,6 +9,8 @@ use sha3::Digest;
 use crate::stone_domain::get_field_element_at_index;
 use crate::{folder::MultiplicativeFriFolder, parameters::FriParameters};
 
+// Given query indices that refer to FRI's second layer,
+// compute the indices of the cosets in the first layer.
 pub fn second_layer_queries_to_first_layer_queries(
     query_indices: &[u64],
     first_fri_step: usize,
@@ -26,6 +28,10 @@ pub fn second_layer_queries_to_first_layer_queries(
     first_layer_queries
 }
 
+// Computes the element from the next FRI layer,
+// given the corresponding coset from the current layer.
+// For example, if fri_step_list[layer_num] = 1, this function behaves the same as
+// next_layer_element_from_two_previous_layer_elements().
 pub fn apply_fri_layers<F: FftField + PrimeField, E: EvaluationDomain<F>>(
     elements: &[F],
     eval_point: Option<F>,
@@ -95,6 +101,16 @@ pub fn choose_query_indices<F: FftField + PrimeField, E: EvaluationDomain<F>, W:
     query_indices
 }
 
+// Given the query indices (of FRI's second layer),
+// we compute the data queries and integrity queries for the next layer of FRI.
+// Data queries are queries whose data needs to go over the channel.
+// Integrity queries are ones that each party can compute based on previously known information.
+//
+// For example, if fri_step of the corresponding layer is 3,
+// then the size of the coset is 8. The verifier will be able to compute one element (integrity query)
+// and the other 7 will be sent in the channel (data queries).
+//
+// Note: The two resulting sets are disjoint.
 pub fn next_layer_data_and_integrity_queries<F: FftField + PrimeField, E: EvaluationDomain<F>>(
     params: &FriParameters<F, E>,
     query_indices: &[u64],
@@ -126,6 +142,9 @@ pub fn next_layer_data_and_integrity_queries<F: FftField + PrimeField, E: Evalua
     (data_queries, integrity_queries)
 }
 
+// Given the query index in the layer (1D), calculate the cell position in the 2D table
+// according to coset size (always power of 2).
+// fri_step is a log2 of coset size (row_size).
 pub fn get_table_prover_row_col(query_index: u64, fri_step: usize) -> RowCol {
     RowCol::new(
         get_table_prover_row(query_index, fri_step),
@@ -133,10 +152,99 @@ pub fn get_table_prover_row_col(query_index: u64, fri_step: usize) -> RowCol {
     )
 }
 
+// Logic: query_index >> fri_step == query_index / Pow2(fri_step) == query_index / row_size.
 pub fn get_table_prover_row(query_index: u64, fri_step: usize) -> usize {
     (query_index >> fri_step) as usize
 }
 
+// Logic: query_index & (Pow2(fri_step) - 1) == query_index % row_size
+// (Pow2(fri_step) - 1) is a mask of 1s to the row_size.
 pub fn get_table_prover_col(query_index: u64, fri_step: usize) -> usize {
     (query_index & ((1 << fri_step) - 1)) as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::parameters::FriParameters;
+    use crate::{
+        folder::MultiplicativeFriFolder,
+        stone_domain::{get_field_element_at_index, make_fft_domains},
+    };
+    use ark_ff::UniformRand;
+    use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
+    use felt::Felt252;
+
+    use super::apply_fri_layers;
+
+    #[test]
+    fn test_apply_fri_layer_correctness() {
+        let mut rng = rand::thread_rng();
+
+        let bases = make_fft_domains::<Felt252>(5, Felt252::rand(&mut rng));
+        let params = FriParameters::new(vec![1, 2], 1, 1, bases.clone(), 15);
+        let eval_point = Felt252::rand(&mut rng);
+
+        // fri_step = 1.
+        let elements: Vec<Felt252> = (0..2).map(|_| Felt252::rand(&mut rng)).collect();
+        let coset_offset = 4;
+        let fri_out = apply_fri_layers(&elements, Some(eval_point), &params, 0, coset_offset);
+        let two_to_one_out =
+            MultiplicativeFriFolder::next_layer_element_from_two_previous_layer_elements(
+                &elements[0],
+                &elements[1],
+                &eval_point,
+                &get_field_element_at_index(&bases[0], coset_offset),
+            );
+        assert_eq!(fri_out, two_to_one_out);
+
+        // fri_step = 2.
+        let elements2: Vec<Felt252> = (0..4).map(|_| Felt252::rand(&mut rng)).collect();
+        let coset_offset2 = 12;
+        let fri_out2 = apply_fri_layers(&elements2, Some(eval_point), &params, 1, coset_offset2);
+
+        let fold_0_1 = MultiplicativeFriFolder::next_layer_element_from_two_previous_layer_elements(
+            &elements2[0],
+            &elements2[1],
+            &eval_point,
+            &get_field_element_at_index(&bases[1], coset_offset2),
+        );
+        let fold_2_3 = MultiplicativeFriFolder::next_layer_element_from_two_previous_layer_elements(
+            &elements2[2],
+            &elements2[3],
+            &eval_point,
+            &get_field_element_at_index(&bases[1], coset_offset2 + 2),
+        );
+        let two_to_one_out2 =
+            MultiplicativeFriFolder::next_layer_element_from_two_previous_layer_elements(
+                &fold_0_1,
+                &fold_2_3,
+                &(eval_point * eval_point),
+                &get_field_element_at_index(&bases[2], coset_offset2 / 2),
+            );
+        assert_eq!(fri_out2, two_to_one_out2);
+    }
+
+    #[test]
+    fn test_apply_fri_layer_poly() {
+        let mut rng = rand::thread_rng();
+        let fri_step = 3;
+        let offset = Felt252::rand(&mut rng);
+        let bases = make_fft_domains::<Felt252>(fri_step, offset);
+        let eval_point = Felt252::rand(&mut rng);
+        let params = FriParameters::new(vec![fri_step], 1, 1, bases.clone(), 15);
+
+        let coeffs: Vec<Felt252> = (0..(1 << fri_step))
+            .map(|_| Felt252::rand(&mut rng))
+            .collect();
+        let poly = DensePolynomial::from_coefficients_vec(coeffs);
+
+        let mut elements = Vec::with_capacity(bases[0].size as usize);
+        for i in 0..bases[0].size {
+            let x = &get_field_element_at_index(&bases[0], i as usize);
+            elements.push(poly.evaluate(x));
+        }
+        let res = apply_fri_layers(&elements, Some(eval_point), &params, 0, 0);
+        let correction_factor = Felt252::from(1 << fri_step);
+        assert_eq!(poly.evaluate(&eval_point) * correction_factor, res);
+    }
 }
