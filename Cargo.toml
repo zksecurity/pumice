@@ -1,5 +1,5 @@
 [workspace]
-members = ["felt", "merkle", "poseidon", "randomness", "channel"]
+members = ["felt", "commitment_scheme", "poseidon", "randomness", "channel"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -11,3 +11,5 @@ blake2 = "0.10.6"
 hex-literal = "0.4.1"
 num-bigint = "0.4.3"
 paste = "1.0"
+hex = "0.4"
+rand = "0.8"
