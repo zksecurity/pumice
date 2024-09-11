@@ -1,6 +1,6 @@
 use std::fmt;
 
-#[derive(Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ChannelStates {
     pub is_query_phase: bool,
     pub byte_count: usize,
