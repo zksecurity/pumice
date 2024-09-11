@@ -66,4 +66,8 @@ impl Prng for PrngKeccak256 {
     fn bytes_chunk_size() -> usize {
         1
     }
+
+    fn should_convert_from_mont_when_initialize() -> bool {
+        true
+    }
 }
