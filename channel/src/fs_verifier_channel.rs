@@ -9,6 +9,7 @@ use std::marker::PhantomData;
 use std::ops::Div;
 use std::sync::OnceLock;
 
+#[derive(Debug, Clone)]
 pub struct FSVerifierChannel<F: PrimeField, P: Prng, W: Digest> {
     pub _ph: PhantomData<(F, W)>,
     pub prng: P,

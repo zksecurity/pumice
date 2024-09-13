@@ -1,24 +1,15 @@
-use ark_ff::Zero;
-use ark_ff::{BigInteger, PrimeField};
+use ark_ff::{
+    BigInteger
+    fields::{MontBackend, MontConfig},
+    Fp256, PrimeField, Zero,
+};
 use std::fmt::Write;
 
-pub use container::Felt252;
-
-#[allow(non_local_definitions)]
-mod container {
-    use ark_ff::{
-        fields::{MontBackend, MontConfig},
-        Fp256,
-    };
-
-    #[derive(MontConfig)]
-    #[modulus = "3618502788666131213697322783095070105623107215331596699973092056135872020481"]
-    #[generator = "3"]
-    #[small_subgroup_base = "2"]
-    #[small_subgroup_power = "192"]
-    pub struct Felt252Config;
-    pub type Felt252 = Fp256<MontBackend<Felt252Config, 4>>;
-}
+#[derive(MontConfig)]
+#[modulus = "3618502788666131213697322783095070105623107215331596699973092056135872020481"]
+#[generator = "3"]
+pub struct Felt252Config;
+pub type Felt252 = Fp256<MontBackend<Felt252Config, 4>>;
 
 /// This method is used for testing / debugging purposes.
 /// It provides a convenient way to create a `Felt252` from a hex string.
@@ -26,8 +17,8 @@ mod container {
 /// Warning: this method is slow and will panic if the input is not a valid hex string.
 pub fn hex(hex: &str) -> Felt252 {
     let mut chars = hex.chars();
-    assert!(chars.next().unwrap() == '0');
-    assert!(chars.next().unwrap() == 'x');
+    assert_eq!(chars.next(), Some('0'));
+    assert_eq!(chars.next(), Some('x'));
 
     let mut res = Felt252::zero();
     for digit in chars {
@@ -55,7 +46,7 @@ pub fn felt_252_to_hex<F: PrimeField>(felt: &F) -> String {
 mod tests {
     use super::*;
 
-    use ark_ff::{FftField, PrimeField};
+    use ark_ff::{FftField, Field, PrimeField};
 
     // sanity check:
     // \omega = 0x5282db87529cfa3f0464519c8b0fa5ad187148e11a61616070024f42f8ef94
@@ -70,5 +61,15 @@ mod tests {
                 0xf8, 0xef, 0x94,
             ])
         );
+    }
+
+    // sanity check:
+    // roots of unity for 2^k, k = 0..64
+    #[test]
+    fn get_root_of_unity() {
+        for k in 0..64 {
+            let omega = Felt252::get_root_of_unity(1 << k).unwrap();
+            assert_eq!(omega.pow(&[1 << k]), Felt252::ONE);
+        }
     }
 }
