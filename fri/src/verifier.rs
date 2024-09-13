@@ -275,7 +275,7 @@ mod fri_tests {
             commitment_hashes,
             |_| vec![],
             Some(_eval_points),
-            Some(fourth_layer_coefs.clone()),
+            Some(fourth_layer_coefs.to_vec()),
         );
         fri_verifier.commitment_phase().unwrap();
     }

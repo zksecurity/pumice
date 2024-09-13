@@ -5,7 +5,6 @@ use std::vec::Vec;
 pub use sha3::Sha3_256;
 
 const INCREMENT_SEED: u64 = 1;
-
 #[derive(Debug, Clone)]
 pub struct PrngKeccak256 {
     hash_chain: HashChain,

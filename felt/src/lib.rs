@@ -1,7 +1,6 @@
 use ark_ff::{
-    BigInteger
     fields::{MontBackend, MontConfig},
-    Fp256, PrimeField, Zero,
+    BigInteger, Fp256, PrimeField, Zero,
 };
 use std::fmt::Write;
 
@@ -29,6 +28,7 @@ pub fn hex(hex: &str) -> Felt252 {
     res
 }
 
+/// This method is used for testing / debugging purposes.
 pub fn felt_252_to_hex<F: PrimeField>(felt: &F) -> String {
     let bigint = felt.into_bigint().to_bytes_be();
     let hex_string = bigint.iter().fold(String::new(), |mut output, b| {
