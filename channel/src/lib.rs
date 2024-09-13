@@ -18,7 +18,7 @@ pub trait Channel {
 }
 
 #[allow(dead_code)]
-trait FSChannel: Channel {
+pub trait FSChannel: Channel {
     type PowHash;
 
     fn apply_proof_of_work(&mut self, security_bits: usize) -> Result<(), anyhow::Error>;

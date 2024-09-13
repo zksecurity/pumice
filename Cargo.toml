@@ -1,5 +1,5 @@
 [workspace]
-members = ["felt", "commitment_scheme", "poseidon", "randomness", "channel"]
+members = ["felt", "commitment_scheme", "poseidon", "randomness", "channel", "fri"]
 resolver = "2"
 
 [workspace.dependencies]
