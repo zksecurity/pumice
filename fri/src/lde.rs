@@ -48,7 +48,7 @@ impl<F: PrimeField> MultiplicativeLDE<F> {
             "length of coeffs must be equal to base size"
         );
         self.ldes
-            .push(DensePolynomial::from_coefficients_slice(&coeffs));
+            .push(DensePolynomial::from_coefficients_slice(coeffs));
     }
 
     // Evaluates the low degree extension of the evaluation that were previously added on a given coset.
@@ -66,7 +66,7 @@ impl<F: PrimeField> MultiplicativeLDE<F> {
 
     pub fn coeffs(&self, index: usize) -> &[F] {
         debug_assert!(index < self.ldes.len());
-        &self.ldes[index].coeffs()
+        self.ldes[index].coeffs()
     }
 }
 
