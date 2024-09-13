@@ -23,8 +23,9 @@ impl<F: PrimeField> MultiplicativeLDE<F> {
     // Adds an evaluation on coset that was used to build the LDE.
     // Future eval invocations will add the lde of that evaluation to the results.
     pub fn add_eval(&mut self, evaluation: &[F]) {
-        assert!(
-            evaluation.len() == self.base.size(),
+        assert_eq!(
+            evaluation.len(),
+            self.base.size(),
             "length of evaluation must be equal to base size"
         );
 
