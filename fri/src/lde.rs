@@ -1,11 +1,13 @@
 use ark_ff::PrimeField;
-use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
+use ark_poly::{
+    univariate::DensePolynomial, DenseUVPolynomial, EvaluationDomain, Radix2EvaluationDomain,
+};
 
 use crate::stone_domain::change_order_of_elements_in_domain;
 
 #[allow(dead_code)]
 pub struct MultiplicativeLDE<F: PrimeField> {
-    pub ldes: Vec<Vec<F>>,
+    pub ldes: Vec<DensePolynomial<F>>,
     pub base: Radix2EvaluationDomain<F>,
     pub reversed_order: bool,
 }
@@ -36,7 +38,8 @@ impl<F: PrimeField> MultiplicativeLDE<F> {
             self.base.ifft(evaluation)
         };
 
-        self.ldes.push(new_lde);
+        self.ldes
+            .push(DensePolynomial::from_coefficients_slice(&new_lde));
     }
 
     pub fn add_coeff(&mut self, coeffs: &[F]) {
@@ -44,7 +47,8 @@ impl<F: PrimeField> MultiplicativeLDE<F> {
             coeffs.len() == self.base.size(),
             "length of coeffs must be equal to base size"
         );
-        self.ldes.push(coeffs.to_vec());
+        self.ldes
+            .push(DensePolynomial::from_coefficients_slice(&coeffs));
     }
 
     // Evaluates the low degree extension of the evaluation that were previously added on a given coset.
@@ -52,16 +56,17 @@ impl<F: PrimeField> MultiplicativeLDE<F> {
     pub fn eval(&self, offset: F) -> Vec<Vec<F>> {
         let eval_domain = self.base.get_coset(offset).unwrap();
         let mut evals: Vec<Vec<F>> = vec![];
-        for lde in self.ldes.iter() {
-            let evals_lde = eval_domain.fft(lde);
-            evals.push(evals_lde);
+        for lde_poly in self.ldes.iter() {
+            let evals_lde = lde_poly.evaluate_over_domain_by_ref(eval_domain);
+            evals.push(evals_lde.evals);
         }
+
         evals
     }
 
-    pub fn coeffs(&self, index: usize) -> &Vec<F> {
+    pub fn coeffs(&self, index: usize) -> &[F] {
         debug_assert!(index < self.ldes.len());
-        &self.ldes[index]
+        &self.ldes[index].coeffs()
     }
 }
 
