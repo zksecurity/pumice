@@ -16,6 +16,26 @@ pub trait FirstLayerQueriesCallback<F: FftField + PrimeField> {
 }
 
 #[allow(dead_code)]
+pub trait FriVerifierTrait<
+    F: FftField + PrimeField,
+    P: Prng + Clone + 'static,
+    W: Digest + Clone + 'static,
+    FQ: FirstLayerQueriesCallback<F>,
+>
+{
+    fn verify_fri(&mut self) -> Result<(), anyhow::Error> {
+        self.read_eval_points()?;
+        self.read_commitments()?;
+        self.read_last_layer_coefficients()?;
+        Ok(())
+    }
+
+    fn read_eval_points(&mut self) -> Result<(), anyhow::Error>;
+    fn read_commitments(&mut self) -> Result<(), anyhow::Error>;
+    fn read_last_layer_coefficients(&mut self) -> Result<(), anyhow::Error>;
+}
+
+#[allow(dead_code)]
 pub struct FriVerifier<
     F: FftField + PrimeField,
     P: Prng + Clone + 'static,
@@ -33,82 +53,33 @@ pub struct FriVerifier<
     query_indices: Vec<u64>,
     query_results: Vec<F>,
     expected_last_layer: Vec<F>,
-    eval_points_test: Option<Vec<F>>,
-    last_layer_coefficients_test: Option<Vec<F>>,
 }
 
-#[allow(dead_code)]
 impl<
         F: FftField + PrimeField,
         P: Prng + Clone + 'static,
         W: Digest + Clone + 'static,
         FQ: FirstLayerQueriesCallback<F>,
-    > FriVerifier<F, P, W, FQ>
+    > FriVerifierTrait<F, P, W, FQ> for FriVerifier<F, P, W, FQ>
 {
-    pub fn new(
-        channel: FSVerifierChannel<F, P, W>,
-        params: FriParameters<F, Radix2EvaluationDomain<F>>,
-        commitment_hashes: CommitmentHashes,
-        first_layer_callback: FQ,
-        eval_points_test: Option<Vec<F>>,
-        last_layer_coefficients_test: Option<Vec<F>>,
-    ) -> Self {
-        let n_layers = params.fri_step_list.len();
-        Self {
-            channel,
-            params,
-            commitment_hashes,
-            first_layer_callback,
-            n_layers,
-            first_eval_point: F::zero(),
-            eval_points: vec![],
-            table_verifiers: vec![],
-            query_indices: vec![],
-            query_results: vec![],
-            expected_last_layer: vec![],
-            eval_points_test,
-            last_layer_coefficients_test,
+    fn read_eval_points(&mut self) -> Result<(), anyhow::Error> {
+        let mut _basis_index = 0;
+        for i in 0..self.n_layers {
+            let cur_fri_step = self.params.fri_step_list[i];
+            _basis_index += cur_fri_step;
+
+            if i == 0 {
+                if self.params.fri_step_list[0] != 0 {
+                    self.first_eval_point = self.channel.draw_felem();
+                }
+            } else {
+                self.eval_points.push(self.channel.draw_felem());
+            }
         }
-    }
-
-    pub fn verify_fri(&mut self) -> Result<(), anyhow::Error> {
-        self.commitment_phase()?;
-
-        // // query phase
-        //self.query_indices = self.choose_query_indices();
-        // //self.channel.begin_query_phase();
-
-        // // decommitment phase
-        // // TODO : annotation
-
-        // self.verify_first_layer();
-        // self.verify_inner_layers();
-        // self.verify_last_layer();
         Ok(())
     }
 
-    pub fn commitment_phase(&mut self) -> Result<(), anyhow::Error> {
-        // If mock value eval_points_test is provided, use it
-        if let Some(eval_points_test) = self.eval_points_test.as_ref() {
-            self.first_eval_point = eval_points_test[0];
-            self.eval_points = eval_points_test[1..].to_vec();
-        } else {
-            // Else, draw eval points from the channel
-            let mut _cumulative_fri_step = 0;
-            for i in 0..self.n_layers {
-                let cur_fri_step = self.params.fri_step_list[i];
-                _cumulative_fri_step += cur_fri_step;
-
-                if i == 0 {
-                    if self.params.fri_step_list[0] != 0 {
-                        self.first_eval_point = self.channel.draw_felem();
-                    }
-                } else {
-                    self.eval_points.push(self.channel.draw_felem());
-                }
-            }
-        }
-
+    fn read_commitments(&mut self) -> Result<(), anyhow::Error> {
         let mut basis_index = 0;
         for i in 0..self.n_layers {
             let cur_fri_step = self.params.fri_step_list[i];
@@ -133,25 +104,16 @@ impl<
                 self.table_verifiers.push(table_verifier);
             }
         }
-
-        self.read_last_layer_coefficients()?;
         Ok(())
     }
 
-    pub fn read_last_layer_coefficients(&mut self) -> Result<(), anyhow::Error> {
+    fn read_last_layer_coefficients(&mut self) -> Result<(), anyhow::Error> {
+        let mut last_layer_coefficients_vector = self
+            .channel
+            .recv_felts(self.params.last_layer_degree_bound)?;
+
         let fri_step_sum: usize = self.params.fri_step_list.iter().sum();
         let last_layer_size = self.params.fft_domains[fri_step_sum].size();
-
-        // If mock value last_layer_coefficients_test is provided, use it
-        let mut last_layer_coefficients_vector = if let Some(last_layer_coefficients_test) =
-            self.last_layer_coefficients_test.as_ref()
-        {
-            last_layer_coefficients_test.clone()
-        } else {
-            // Else, draw last layer coefficients from the channel
-            self.channel
-                .recv_felts(self.params.last_layer_degree_bound)?
-        };
 
         // pad last_layer_coefficients_vector with zeros to the size of last_layer_size
         while last_layer_coefficients_vector.len() < last_layer_size {
@@ -177,12 +139,43 @@ impl<
     }
 }
 
+#[allow(dead_code)]
+impl<
+        F: FftField + PrimeField,
+        P: Prng + Clone + 'static,
+        W: Digest + Clone + 'static,
+        FQ: FirstLayerQueriesCallback<F>,
+    > FriVerifier<F, P, W, FQ>
+{
+    pub fn new(
+        channel: FSVerifierChannel<F, P, W>,
+        params: FriParameters<F, Radix2EvaluationDomain<F>>,
+        commitment_hashes: CommitmentHashes,
+        first_layer_callback: FQ,
+    ) -> Self {
+        let n_layers = params.fri_step_list.len();
+        Self {
+            channel,
+            params,
+            commitment_hashes,
+            first_layer_callback,
+            n_layers,
+            first_eval_point: F::zero(),
+            eval_points: vec![],
+            table_verifiers: vec![],
+            query_indices: vec![],
+            query_results: vec![],
+            expected_last_layer: vec![],
+        }
+    }
+}
+
 #[cfg(test)]
 mod fri_tests {
     use ark_poly::{
         domain::EvaluationDomain, univariate::DensePolynomial, DenseUVPolynomial, Polynomial,
     };
-    use channel::{fs_prover_channel::FSProverChannel, Channel, ProverChannel};
+    use channel::fs_prover_channel::FSProverChannel;
     use commitment_scheme::SupportedHashes;
     use felt::{hex, Felt252};
     use randomness::{keccak256::PrngKeccak256, Prng};
@@ -193,7 +186,6 @@ mod fri_tests {
     use super::*;
 
     type TestProverChannel = FSProverChannel<Felt252, PrngKeccak256, Sha3_256>;
-    type TestVerifierChannel = FSVerifierChannel<Felt252, PrngKeccak256, Sha3_256>;
 
     struct TestFirstLayerQueriesCallback;
 
@@ -203,9 +195,102 @@ mod fri_tests {
         }
     }
 
-    fn generate_verifier_channel(prover_channel: &TestProverChannel) -> TestVerifierChannel {
-        let prng = PrngKeccak256::new_with_seed(&[0u8; 4]);
-        TestVerifierChannel::new(prng, prover_channel.get_proof())
+    pub struct TestFriVerifier<
+        F: FftField + PrimeField,
+        P: Prng + Clone + 'static,
+        W: Digest + Clone + 'static,
+        FQ: FirstLayerQueriesCallback<F>,
+    > {
+        params: FriParameters<F, Radix2EvaluationDomain<F>>,
+        commitment_hashes: CommitmentHashes,
+        first_layer_callback: FQ,
+        n_layers: usize,
+        first_eval_point: F,
+        eval_points: Vec<F>,
+        table_verifiers: Vec<TableVerifier<F, P, W>>,
+        query_indices: Vec<u64>,
+        query_results: Vec<F>,
+        expected_last_layer: Vec<F>,
+        mock_last_layer_coefs: Vec<F>,
+    }
+
+    impl<
+            F: FftField + PrimeField,
+            P: Prng + Clone + 'static,
+            W: Digest + Clone + 'static,
+            FQ: FirstLayerQueriesCallback<F>,
+        > TestFriVerifier<F, P, W, FQ>
+    {
+        pub fn new(
+            params: FriParameters<F, Radix2EvaluationDomain<F>>,
+            commitment_hashes: CommitmentHashes,
+            first_layer_callback: FQ,
+            mock_eval_points: Vec<F>,
+            mock_last_layer_coefs: Vec<F>,
+        ) -> Self {
+            let n_layers = params.fri_step_list.len();
+            Self {
+                params,
+                commitment_hashes,
+                first_layer_callback,
+                n_layers,
+                first_eval_point: mock_eval_points[0],
+                eval_points: mock_eval_points[1..].to_vec(),
+                table_verifiers: vec![],
+                query_indices: vec![],
+                query_results: vec![],
+                expected_last_layer: vec![],
+                mock_last_layer_coefs,
+            }
+        }
+    }
+
+    impl<
+            F: FftField + PrimeField,
+            P: Prng + Clone + 'static,
+            W: Digest + Clone + 'static,
+            FQ: FirstLayerQueriesCallback<F>,
+        > FriVerifierTrait<F, P, W, FQ> for TestFriVerifier<F, P, W, FQ>
+    {
+        fn read_eval_points(&mut self) -> Result<(), anyhow::Error> {
+            // Eval points are set in constructor
+            Ok(())
+        }
+
+        fn read_commitments(&mut self) -> Result<(), anyhow::Error> {
+            // Table verifier is tightly coupled with the channel, so we exclude this part in the mock test.
+            // If we could manually change the 'comm' variable of MerkleCommitmentSchemeVerifier, we might be able to test this part.
+            Ok(())
+        }
+
+        fn read_last_layer_coefficients(&mut self) -> Result<(), anyhow::Error> {
+            let mut last_layer_coefficients_vector = self.mock_last_layer_coefs.clone();
+
+            let fri_step_sum: usize = self.params.fri_step_list.iter().sum();
+            let last_layer_size = self.params.fft_domains[fri_step_sum].size();
+
+            // pad last_layer_coefficients_vector with zeros to the size of last_layer_size
+            while last_layer_coefficients_vector.len() < last_layer_size {
+                last_layer_coefficients_vector.push(F::zero());
+            }
+
+            assert!(
+                self.params.last_layer_degree_bound <= last_layer_size,
+                "last_layer_degree_bound ({}) must be <= last_layer_size ({})",
+                self.params.last_layer_degree_bound,
+                last_layer_size
+            );
+
+            let last_layer_basis_index = fri_step_sum;
+            let lde_domain = self.params.fft_domains[last_layer_basis_index];
+            let mut lde = MultiplicativeLDE::new(lde_domain, true);
+
+            lde.add_coeff(&last_layer_coefficients_vector);
+            let evals = lde.batch_eval(lde_domain.element(0));
+            self.expected_last_layer.clone_from(&evals[0]);
+
+            Ok(())
+        }
     }
 
     fn generate_prover_channel() -> TestProverChannel {
@@ -218,9 +303,8 @@ mod fri_tests {
     }
 
     #[test]
-    fn commitment_phase() {
-        let mut channel_for_rng = generate_prover_channel();
-        let mut test_prover_channel = generate_prover_channel();
+    fn mock_commitment_phase() {
+        let mut rng = generate_prover_channel();
 
         let last_layer_degree_bound = 5;
         let proof_of_work_bits = 15;
@@ -240,7 +324,7 @@ mod fri_tests {
         );
 
         let poly_coeffs: Vec<Felt252> = (0..64 * last_layer_degree_bound)
-            .map(|_| gen_random_field_element(&mut channel_for_rng))
+            .map(|_| gen_random_field_element(&mut rng))
             .collect();
 
         let test_layer = DensePolynomial::from_coefficients_vec(poly_coeffs);
@@ -285,21 +369,20 @@ mod fri_tests {
             hex("0x2f06b17e08bc409b945b951de8102653dc48a143b87d09b6c95587679816d02"),
         ];
 
-        // send two dummy commitments
-        let _ = test_prover_channel.send_felts(&vec![Felt252::from(1u64); 2]);
-
-        // verifier channel
-        let test_verifier_channel = generate_verifier_channel(&test_prover_channel);
         let commitment_hashes = CommitmentHashes::from_single_hash(SupportedHashes::Blake2s256);
 
-        let mut fri_verifier = FriVerifier::new(
-            test_verifier_channel,
+        let mut fri_verifier = TestFriVerifier::<
+            Felt252,
+            PrngKeccak256,
+            Sha3_256,
+            TestFirstLayerQueriesCallback,
+        >::new(
             params,
             commitment_hashes,
             TestFirstLayerQueriesCallback,
-            Some(_eval_points),
-            Some(fourth_layer_coefs.to_vec()),
+            _eval_points,
+            fourth_layer_coefs.to_vec(),
         );
-        fri_verifier.commitment_phase().unwrap();
+        fri_verifier.verify_fri().unwrap();
     }
 }
