@@ -8,9 +8,8 @@ impl MultiplicativeFriFolder {
         f_x: F,
         f_minus_x: F,
         eval_point: F,
-        x: F,
+        x_inv: F,
     ) -> F {
-        let x_inv = x.inverse().unwrap();
         Self::fold(f_x, f_minus_x, eval_point, x_inv)
     }
 
