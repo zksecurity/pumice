@@ -15,5 +15,5 @@ ALLOWED = {
 licenses = json.loads(sys.stdin.read())
 
 for dep in licenses["dependencies"]:
-    print(f"{dep["name"]}-{dep["version"]}: {", ".join(dep["licenses"])}")
+    print(f'{dep["name"]}-{dep["version"]}: {", ".join(dep["licenses"])}')
     assert len(set(dep["licenses"]).intersection(ALLOWED)) > 0, dep

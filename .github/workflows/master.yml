@@ -17,10 +17,12 @@ jobs:
         with:
           toolchain: stable
           targets: wasm32-unknown-unknown
-          components: rustfmt, clippy, license
+          components: rustfmt, clippy
 
       - name: Run the license check
-        run: cargo license --gitlab | python3 license.py
+        run: |
+          cargo install cargo-license
+          cargo license --gitlab | python3 license.py
 
       - name: Run cargo test
         run: cargo test --all-features
