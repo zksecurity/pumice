@@ -30,9 +30,11 @@ pub struct FriParameters<F: FftField, E: EvaluationDomain<F>> {
     ///    1. The last layers are small but still require Merkle authentication paths which are
     ///       non-negligible.
     ///    2. It requires N to be of the form 2^n.
+    ///
     ///  In our implementation, we reduce the degree from N to R (last_layer_degree_bound) for a
-    ///  relatively small R using log2(N/R) fri steps. To do it we send the R coefficients of the last
-    ///  FRI layer instead of continuing with additional FRI layers.
+    ///  relatively small R using log2(N/R) fri steps. To do it we send the R coefficients of the
+    ///  last FRI layer instead of continuing with additional FRI layers.
+    ///
     ///  To reduce proof-length, it is always better to pick last_layer_degree_bound > 1.
     pub last_layer_degree_bound: usize,
     pub n_queries: usize,
