@@ -4,5 +4,6 @@ mod folder;
 mod layers;
 mod lde;
 mod parameters;
+mod prover;
 mod stone_domain;
 mod verifier;
