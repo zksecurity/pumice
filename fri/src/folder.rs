@@ -1,6 +1,6 @@
 use anyhow::Error;
 use ark_ff::{FftField, PrimeField};
-use ark_poly::Radix2EvaluationDomain;
+use ark_poly::EvaluationDomain;
 use std::sync::Arc;
 
 use crate::stone_domain::get_field_element_at_index;
@@ -11,11 +11,11 @@ pub struct MultiplicativeFriFolder;
 impl MultiplicativeFriFolder {
     // Computes the values of the next FRI layer given the values and domain of the current layer.
     pub fn compute_next_fri_layer<F: FftField + PrimeField>(
-        domain: Radix2EvaluationDomain<F>,
+        domain: impl EvaluationDomain<F>,
         input_layer: &[F],
         eval_point: &F,
     ) -> Result<Vec<F>, Error> {
-        assert_eq!(input_layer.len(), domain.size as usize);
+        assert_eq!(input_layer.len(), domain.size());
 
         let mut next_layer = Vec::with_capacity(input_layer.len() / 2);
         for j in (0..input_layer.len()).step_by(2) {
