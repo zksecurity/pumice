@@ -19,6 +19,11 @@ jobs:
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
 
+      - name: Run the license check
+        run: |
+          cargo install cargo-license
+          cargo license --gitlab --all-features | python3 license.py
+
       - name: Run cargo test
         run: cargo test --all-features
 
