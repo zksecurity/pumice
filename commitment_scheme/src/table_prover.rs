@@ -1,5 +1,6 @@
+use crate::make_commitment_scheme_prover;
 use crate::table_utils::{all_query_rows, elements_to_be_transmitted, RowCol};
-use crate::CommitmentSchemeProver;
+use crate::{CommitmentHashes, CommitmentSchemeProver};
 use ark_ff::{BigInteger, PrimeField};
 use channel::fs_prover_channel::FSProverChannel;
 use channel::ProverChannel;
@@ -13,19 +14,38 @@ pub struct TableProver<F: PrimeField, P: Prng, W: Digest> {
     data_queries: BTreeSet<RowCol>,
     integrity_queries: BTreeSet<RowCol>,
     all_query_rows: BTreeSet<usize>,
+    mont_r: F,
 }
 
-impl<F: PrimeField, P: Prng, W: Digest> TableProver<F, P, W> {
+impl<F: PrimeField, P: Prng + Clone + 'static, W: Digest + Clone + 'static> TableProver<F, P, W> {
     pub fn new(
+        n_segments: usize,
+        n_rows_per_segment: usize,
         n_columns: usize,
-        commitment_scheme: Box<dyn CommitmentSchemeProver<F, P, W>>,
+        field_element_size_in_bytes: usize,
+        n_verifier_friendly_commitment_layers: usize,
+        commitment_hashes: CommitmentHashes,
+        mont_r: F,
     ) -> Self {
+        let size_of_row = field_element_size_in_bytes * n_columns;
+
+        let commitment_scheme: Box<dyn CommitmentSchemeProver<F, P, W>> =
+            make_commitment_scheme_prover(
+                size_of_row,
+                n_rows_per_segment,
+                n_segments,
+                n_verifier_friendly_commitment_layers,
+                commitment_hashes,
+                n_columns,
+            );
+
         Self {
             n_columns,
             commitment_scheme,
             data_queries: BTreeSet::new(),
             integrity_queries: BTreeSet::new(),
             all_query_rows: BTreeSet::new(),
+            mont_r,
         }
     }
 
@@ -41,9 +61,10 @@ impl<F: PrimeField, P: Prng, W: Digest> TableProver<F, P, W> {
             "segment length is expected to be equal to the number of columns"
         );
 
+        let serialised_segment = serialize_field_columns(segment, self.mont_r);
         let _ = &self
             .commitment_scheme
-            .add_segment_for_commitment(&serialize_field_columns(segment), segment_idx);
+            .add_segment_for_commitment(&serialised_segment, segment_idx);
     }
 
     pub fn commit(&mut self, channel: &mut FSProverChannel<F, P, W>) -> Result<(), anyhow::Error> {
@@ -120,14 +141,17 @@ impl<F: PrimeField, P: Prng, W: Digest> TableProver<F, P, W> {
 
                     if let Some(&to_transmit_loc) = to_transmit_it.next() {
                         assert!(to_transmit_loc == query_loc);
-                        channel.send_felts(&[data[i]])?;
+                        let data_mont = data[i] * self.mont_r;
+                        channel.send_felts(&[data_mont])?;
                     }
                 }
             }
         }
 
-        self.commitment_scheme
-            .decommit(&serialize_field_columns(&elements_data_last_rows), channel)?;
+        self.commitment_scheme.decommit(
+            &serialize_field_columns(&elements_data_last_rows, self.mont_r),
+            channel,
+        )?;
 
         Ok(())
     }
@@ -146,7 +170,7 @@ fn verify_all_columns_same_length<FieldElementT>(columns: &[Vec<FieldElementT>])
     columns.iter().all(|column| column.len() == n_rows)
 }
 
-fn serialize_field_columns<F: PrimeField>(segment: &[Vec<F>]) -> Vec<u8> {
+pub fn serialize_field_columns<F: PrimeField>(segment: &[Vec<F>], mont_r: F) -> Vec<u8> {
     let columns = segment;
 
     assert!(
@@ -163,7 +187,8 @@ fn serialize_field_columns<F: PrimeField>(segment: &[Vec<F>]) -> Vec<u8> {
 
     for row in 0..n_rows {
         for col_data in columns.iter().take(n_columns) {
-            serialization.extend_from_slice(&col_data[row].into_bigint().to_bytes_be());
+            let data_mont = col_data[row] * mont_r;
+            serialization.extend_from_slice(&data_mont.into_bigint().to_bytes_be());
         }
     }
 
