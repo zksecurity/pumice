@@ -1,9 +1,9 @@
+use crate::stone_domain::get_field_element_at_index;
 use anyhow::Error;
+use ark_ff::fields::batch_inversion;
 use ark_ff::{FftField, PrimeField};
 use ark_poly::Radix2EvaluationDomain;
 use std::sync::Arc;
-
-use crate::stone_domain::get_field_element_at_index;
 
 pub struct MultiplicativeFriFolder;
 
@@ -17,11 +17,14 @@ impl MultiplicativeFriFolder {
     ) -> Result<Vec<F>, Error> {
         assert_eq!(input_layer.len(), domain.size as usize);
 
+        let mut elements: Vec<F> = (0..domain.size as usize)
+            .map(|i| get_field_element_at_index(&domain, i))
+            .collect();
+        batch_inversion(&mut elements);
+
         let mut next_layer = Vec::with_capacity(input_layer.len() / 2);
         for j in (0..input_layer.len()).step_by(2) {
-            let x_inv = get_field_element_at_index(&domain, j)
-                .inverse()
-                .ok_or_else(|| anyhow::anyhow!("Inverse not found"))?;
+            let x_inv = elements[j];
             next_layer.push(Self::fold(
                 &input_layer[j],
                 &input_layer[j + 1],
