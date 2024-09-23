@@ -1,7 +1,8 @@
 use ark_ff::{
     fields::{MontBackend, MontConfig},
-    Fp256, Zero,
+    BigInteger, Fp256, PrimeField, Zero,
 };
+use std::fmt::Write;
 
 #[derive(MontConfig)]
 #[modulus = "3618502788666131213697322783095070105623107215331596699973092056135872020481"]
@@ -25,6 +26,24 @@ pub fn hex(hex: &str) -> Felt252 {
         res += Felt252::from(val as u64);
     }
     res
+}
+
+/// This method is used for testing / debugging purposes.
+pub fn felt_252_to_hex<F: PrimeField>(felt: &F) -> String {
+    let bigint = felt.into_bigint().to_bytes_be();
+    let hex_string = bigint.iter().fold(String::new(), |mut output, b| {
+        let _ = write!(output, "{:02x}", b);
+        output
+    });
+
+    // remove leading 0
+    let hex_string = hex_string.trim_start_matches('0').to_string();
+    // add leading 0x
+    format!("0x{}", hex_string)
+}
+
+pub fn byte_size<F: PrimeField>() -> usize {
+    (F::MODULUS_BIT_SIZE.div_ceil(8) * 8) as usize
 }
 
 #[cfg(test)]
