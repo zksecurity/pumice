@@ -18,3 +18,4 @@ anyhow.workspace = true
 [dev-dependencies]
 paste.workspace = true
 blake2.workspace = true
+rand.workspace = true
