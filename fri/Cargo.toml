@@ -13,3 +13,8 @@ sha3.workspace = true
 serde_json.workspace = true
 serde.workspace = true
 commitment_scheme = { path = "../commitment_scheme" }
+anyhow.workspace = true
+
+[dev-dependencies]
+paste.workspace = true
+blake2.workspace = true

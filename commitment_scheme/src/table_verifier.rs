@@ -4,6 +4,7 @@ use anyhow::{Error, Ok};
 use ark_ff::{BigInteger, PrimeField};
 use channel::fs_verifier_channel::FSVerifierChannel;
 use channel::VerifierChannel;
+use num_bigint::BigUint;
 use randomness::Prng;
 use sha3::Digest;
 use std::collections::{BTreeMap, BTreeSet};
@@ -11,6 +12,8 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct TableVerifier<F: PrimeField, P: Prng, W: Digest> {
     n_columns: usize,
     commitment_scheme: Box<dyn CommitmentSchemeVerifier<F, P, W>>,
+    convert_mont_decommitment: bool,
+    mont_r: F,
 }
 
 impl<F: PrimeField, P: Prng, W: Digest> TableVerifier<F, P, W> {
@@ -18,10 +21,22 @@ impl<F: PrimeField, P: Prng, W: Digest> TableVerifier<F, P, W> {
     pub fn new(
         n_columns: usize,
         commitment_scheme: Box<dyn CommitmentSchemeVerifier<F, P, W>>,
+        convert_mont_decommitment: bool,
     ) -> Self {
+        let mut mont_r = F::one();
+        if convert_mont_decommitment {
+            let size = F::MODULUS_BIT_SIZE.div_ceil(8) * 8;
+            let mont_r_bigint =
+                BigUint::from(2u64).modpow(&BigUint::from(size), &F::MODULUS.into());
+            mont_r = F::from_bigint(<F as PrimeField>::BigInt::try_from(mont_r_bigint).unwrap())
+                .unwrap();
+        }
+
         Self {
             n_columns,
             commitment_scheme,
+            convert_mont_decommitment,
+            mont_r,
         }
     }
 
@@ -85,8 +100,13 @@ impl<F: PrimeField, P: Prng, W: Digest> TableVerifier<F, P, W> {
                         cur_row,
                         "Data skips to next row before finishing the current."
                     );
+
                     // Copy the field element bytes into the appropriate position in row_data.
-                    let field_bytes = field_element.into_bigint().to_bytes_be();
+                    let field_bytes = if self.convert_mont_decommitment {
+                        field_element.mul(&self.mont_r).into_bigint().to_bytes_be()
+                    } else {
+                        field_element.into_bigint().to_bytes_be()
+                    };
                     assert_eq!(field_bytes.len(), element_size);
                     row_data.extend_from_slice(&field_bytes);
                 } else {
@@ -222,7 +242,7 @@ mod tests {
         let commitment_scheme =
             make_commitment_scheme_verifier(size_of_row, n_rows, 0, commitment_hashes, n_columns);
 
-        let mut table_verifier = TableVerifier::new(n_columns, commitment_scheme);
+        let mut table_verifier = TableVerifier::new(n_columns, commitment_scheme, false);
 
         let _ = table_verifier.read_commitment(&mut verifier_channel);
 

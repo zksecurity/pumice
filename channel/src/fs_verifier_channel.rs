@@ -9,6 +9,7 @@ use std::marker::PhantomData;
 use std::ops::Div;
 use std::sync::OnceLock;
 
+#[derive(Debug, Clone)]
 pub struct FSVerifierChannel<F: PrimeField, P: Prng, W: Digest> {
     pub _ph: PhantomData<(F, W)>,
     pub prng: P,
@@ -132,7 +133,9 @@ impl<F: PrimeField, P: Prng, W: Digest> VerifierChannel for FSVerifierChannel<F,
         let raw_bytes: Vec<u8> = self.recv_bytes(n * chunk_bytes_size)?;
 
         for chunk in raw_bytes.chunks_exact(chunk_bytes_size) {
-            let felt = Self::Field::from_be_bytes_mod_order(chunk);
+            // maybe we should use flag should_convert_from_mont_when_initialize
+            let mut felt = Self::Field::from_be_bytes_mod_order(chunk);
+            felt.mul_assign(self.mont_r_inv);
             felts.push(felt);
         }
 

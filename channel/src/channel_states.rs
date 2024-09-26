@@ -1,6 +1,6 @@
 use std::fmt;
 
-#[derive(Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ChannelStates {
     pub is_query_phase: bool,
     pub byte_count: usize,
@@ -11,6 +11,17 @@ pub struct ChannelStates {
 }
 
 impl ChannelStates {
+    pub fn default() -> Self {
+        ChannelStates {
+            is_query_phase: false,
+            byte_count: 0,
+            hash_count: 0,
+            commitment_count: 0,
+            field_element_count: 0,
+            data_count: 0,
+        }
+    }
+
     pub fn increment_byte_count(&mut self, n: usize) {
         self.byte_count += n;
     }

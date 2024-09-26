@@ -101,8 +101,6 @@ impl<F: PrimeField> Hasher<F> for Poseidon3Hasher<F> {
         assert_eq!(input.len(), 2);
         let input0_int = BigUint::from_bytes_be(&input[0]);
         let input1_int = BigUint::from_bytes_be(&input[1]);
-        assert!(input0_int < F::MODULUS.into());
-        assert!(input1_int < F::MODULUS.into());
 
         let input0 = input0_int.into();
         let input1 = input1_int.into();

@@ -6,53 +6,30 @@ pub fn get_field_element_at_index<F: FftField, E: EvaluationDomain<F>>(
     domain: &E,
     index: usize,
 ) -> F {
-    // loop index with divide by 2
-    let mut i = index;
-    let mut s = domain.size() / 2;
-    let mut new_index = 0;
-    while i > 0 {
-        if i & 1 != 0 {
-            new_index += s;
-        }
-        i >>= 1;
-        s >>= 1;
-    }
-    domain.elements().nth(new_index).unwrap()
+    let log_len = domain.size().trailing_zeros() as usize;
+    domain
+        .elements()
+        .nth(translate_index(index, log_len))
+        .unwrap()
 }
 
 // change order of elements in domain
 pub fn change_order_of_elements_in_domain<F: FftField>(elements: &[F]) -> Vec<F> {
     // get smallest power of two that is greater than elements.len()
     let size = elements.len().next_power_of_two();
-    let mut new_elements = vec![F::zero(); size];
-    let log_len = size.trailing_zeros();
-    let mapping_vec = (0..log_len)
-        .map(|i| (1 << (log_len - 1 - i)))
-        .collect::<Vec<usize>>();
-
-    // [1, 2, 4]
-    // consider array as binary number basis
-    // 0 -> 000 -> 0
-    // 1 -> 001 -> 4
-    // 2 -> 010 -> 2
-    // 3 -> 011 -> 6
-    // 4 -> 100 -> 1
-    // 5 -> 101 -> 5
-    // 6 -> 110 -> 3
-    // 7 -> 111 -> 7
-    for (i, element) in elements.iter().enumerate() {
-        let mut new_index = 0;
-        let mut index = i;
-        for base in mapping_vec.iter() {
-            if index & 1 != 0 {
-                new_index += base;
-            }
-            index >>= 1;
-        }
-        new_elements[new_index] = *element;
+    // byte size of usize - log_len
+    let log_len = size.trailing_zeros() as usize;
+    let mut new_elements = Vec::with_capacity(size);
+    for i in 0..size {
+        new_elements.push(elements[translate_index(i, log_len)])
     }
 
     new_elements
+}
+
+pub fn translate_index(index: usize, log_len: usize) -> usize {
+    let sft = std::mem::size_of::<usize>() * 8 - log_len;
+    index.reverse_bits() >> sft
 }
 
 #[allow(dead_code)]

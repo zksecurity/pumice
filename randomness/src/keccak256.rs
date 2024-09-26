@@ -5,7 +5,6 @@ use std::vec::Vec;
 pub use sha3::Sha3_256;
 
 const INCREMENT_SEED: u64 = 1;
-
 #[derive(Debug, Clone)]
 pub struct PrngKeccak256 {
     hash_chain: HashChain,
@@ -26,7 +25,10 @@ impl Prng for PrngKeccak256 {
     }
 
     fn random_bytes(&mut self, random_bytes_out: &mut [u8]) {
+        // print prng state
+        // println!("prng state before random bytes: {:?}", self.prng_state());
         self.hash_chain.random_bytes(random_bytes_out);
+        //println!("prng state after random bytes: {:?}", self.prng_state());
     }
 
     fn random_bytes_vec(&mut self, n_elements: usize) -> Vec<u8> {

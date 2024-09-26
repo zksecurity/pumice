@@ -1,26 +1,29 @@
 use ark_ff::{FftField, PrimeField};
-use std::sync::Arc;
 
 pub struct MultiplicativeFriFolder;
 
 #[allow(dead_code)]
 impl MultiplicativeFriFolder {
     pub fn next_layer_element_from_two_previous_layer_elements<F: FftField + PrimeField>(
-        f_x: &F,
-        f_minus_x: &F,
-        eval_point: &F,
-        x: &F,
+        f_x: F,
+        f_minus_x: F,
+        eval_point: F,
+        x_inv: F,
     ) -> F {
-        let x_inv = x.inverse().unwrap();
-        Self::fold(f_x, f_minus_x, eval_point, &x_inv)
+        Self::fold(f_x, f_minus_x, eval_point, x_inv)
     }
 
-    fn fold<F: FftField + PrimeField>(f_x: &F, f_minus_x: &F, eval_point: &F, x_inv: &F) -> F {
-        *f_x + *f_minus_x + *eval_point * (*f_x - *f_minus_x) * *x_inv
+    /// Interpolating a line through (x, f(x)) and (-x, f(-x))
+    /// then evaluating it at "eval_point"
+    /// Multiplicative case folding formula:
+    /// f(x)  = g(x^2) + xh(x^2)
+    /// f(-x) = g((-x)^2) - xh((-x)^2) = g(x^2) - xh(x^2)
+    /// =>
+    /// 2g(x^2) = f(x) + f(-x)
+    /// 2h(x^2) = (f(x) - f(-x))/x
+    /// =>
+    /// 2g(x^2) + 2ah(x^2) = f(x) + f(-x) + a(f(x) - f(-x))/x.
+    fn fold<F: FftField + PrimeField>(f_x: F, f_minus_x: F, eval_point: F, x_inv: F) -> F {
+        f_x + f_minus_x + eval_point * (f_x - f_minus_x) * x_inv
     }
-}
-
-#[allow(dead_code)]
-pub fn fri_folder_from_field() -> Arc<MultiplicativeFriFolder> {
-    Arc::new(MultiplicativeFriFolder)
 }
