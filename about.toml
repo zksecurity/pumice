@@ -1,0 +1,10 @@
+accepted = [
+    "Apache-2.0",
+    "MIT",
+	"BSD-3-Clause",
+	"Unicode-DFS-2016"
+]
+ignore-transitive-dependencies = false
+ignore-build-dependencies = false
+ignore-dev-dependencies = false
+no-clearly-defined = true
