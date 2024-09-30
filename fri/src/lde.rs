@@ -54,8 +54,7 @@ impl<F: PrimeField> MultiplicativeLDE<F> {
     // Evaluates the low degree extension of the evaluation that were previously added on a given coset.
     // The results are ordered according to the order that the LDEs were added.
     pub fn batch_eval(&self, offset: F) -> Vec<Vec<F>> {
-        let original_offset_inv = self.base.offset_inv;
-        let eval_domain = self.base.get_coset(offset * original_offset_inv).unwrap();
+        let eval_domain = self.base.get_coset(offset).unwrap();
 
         // let eval_domain = self.base;
         let mut evals: Vec<Vec<F>> = vec![];

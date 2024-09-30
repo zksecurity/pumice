@@ -148,7 +148,7 @@ impl<
         let mut lde = MultiplicativeLDE::new(lde_domain, true);
         lde.add_coeff(&last_layer_coefficients_vector);
 
-        let evals = lde.batch_eval(lde_domain.element(0));
+        let evals = lde.batch_eval(F::one());
         // The stone code uses big-endian element ordering, while the arkworks code uses little-endian element ordering
         self.expected_last_layer = change_order_of_elements_in_domain(&evals[0]);
 
