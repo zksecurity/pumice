@@ -17,7 +17,7 @@ impl MultiplicativeFriFolder {
     ) -> Result<Vec<F>, Error> {
         assert_eq!(input_layer.len(), domain.size());
 
-        let mut elements: Vec<F> = (0..domain.size as usize)
+        let mut elements: Vec<F> = (0..domain.size())
             .map(|i| get_field_element_at_index(&domain, i))
             .collect();
         batch_inversion(&mut elements);

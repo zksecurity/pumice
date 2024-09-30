@@ -4,18 +4,15 @@ use ark_ff::PrimeField;
 use ark_poly::EvaluationDomain;
 use std::sync::Arc;
 
-#[allow(dead_code)]
 pub trait FriLayer<F: PrimeField, E: EvaluationDomain<F>> {
     fn get_layer_size(&self) -> usize;
     fn get_domain(&self) -> E;
     fn get_layer(&self) -> Result<Vec<F>, Error>;
     fn eval_at_points(&self, required_indices: &[usize]) -> Vec<F>;
-    fn clone_arc(&self) -> Arc<dyn FriLayer<F, E>>;
 }
 
 #[derive(Clone)]
 pub struct FriLayerReal<F: PrimeField, E: EvaluationDomain<F>> {
-    layer_size: usize,
     domain: E,
     evaluation: Vec<F>,
 }
@@ -23,16 +20,11 @@ pub struct FriLayerReal<F: PrimeField, E: EvaluationDomain<F>> {
 #[allow(dead_code)]
 impl<F: PrimeField, E: EvaluationDomain<F>> FriLayerReal<F, E> {
     pub fn new(domain: E, evaluation: Vec<F>) -> Self {
-        Self {
-            layer_size: domain.size(),
-            domain,
-            evaluation,
-        }
+        Self { domain, evaluation }
     }
 
     pub fn new_from_prev_layer(prev_layer: &dyn FriLayer<F, E>) -> Self {
         Self {
-            layer_size: prev_layer.get_layer_size(),
             domain: prev_layer.get_domain(),
             evaluation: prev_layer.get_layer().unwrap(),
         }
@@ -41,7 +33,7 @@ impl<F: PrimeField, E: EvaluationDomain<F>> FriLayerReal<F, E> {
 
 impl<F: PrimeField, E: EvaluationDomain<F> + 'static> FriLayer<F, E> for FriLayerReal<F, E> {
     fn get_layer_size(&self) -> usize {
-        self.layer_size
+        self.domain.size()
     }
 
     fn get_domain(&self) -> E {
@@ -58,14 +50,9 @@ impl<F: PrimeField, E: EvaluationDomain<F> + 'static> FriLayer<F, E> for FriLaye
             .map(|&i| self.evaluation[i])
             .collect()
     }
-
-    fn clone_arc(&self) -> Arc<dyn FriLayer<F, E>> {
-        Arc::new(self.clone())
-    }
 }
 
 pub struct FriLayerProxy<F: PrimeField, E: EvaluationDomain<F>> {
-    layer_size: usize,
     domain: E,
     prev_layer: Arc<dyn FriLayer<F, E>>,
     eval_point: F,
@@ -83,7 +70,6 @@ impl<F: PrimeField, E: EvaluationDomain<F>> FriLayerProxy<F, E> {
         };
 
         Self {
-            layer_size: current_domain.size() as usize,
             domain: current_domain,
             prev_layer,
             eval_point,
@@ -93,7 +79,7 @@ impl<F: PrimeField, E: EvaluationDomain<F>> FriLayerProxy<F, E> {
 
 impl<F: PrimeField, E: EvaluationDomain<F> + 'static> FriLayer<F, E> for FriLayerProxy<F, E> {
     fn get_layer_size(&self) -> usize {
-        self.layer_size
+        self.domain.size()
     }
 
     fn get_domain(&self) -> E {
@@ -107,21 +93,12 @@ impl<F: PrimeField, E: EvaluationDomain<F> + 'static> FriLayer<F, E> for FriLaye
         MultiplicativeFriFolder::compute_next_fri_layer(
             prev_layer_domain,
             &prev_eval,
-            &self.eval_point,
+            self.eval_point,
         )
     }
 
     fn eval_at_points(&self, _required_indices: &[usize]) -> Vec<F> {
         unimplemented!("Should never be called")
-    }
-
-    fn clone_arc(&self) -> Arc<dyn FriLayer<F, E>> {
-        Arc::new(FriLayerProxy {
-            layer_size: self.layer_size,
-            domain: self.domain,
-            prev_layer: Arc::clone(&self.prev_layer),
-            eval_point: self.eval_point,
-        })
     }
 }
 
@@ -247,7 +224,7 @@ mod test {
         let folded_layer = MultiplicativeFriFolder::compute_next_fri_layer(
             layer_0.get_domain(),
             &layer_0_eval,
-            &eval_point,
+            eval_point,
         )
         .unwrap();
         assert_eq!(folded_layer, layer_1_eval);
@@ -271,7 +248,7 @@ mod test {
         let folded_layer = MultiplicativeFriFolder::compute_next_fri_layer(
             layer_0.get_domain(),
             &layer_0_eval,
-            &eval_point,
+            eval_point,
         )
         .unwrap();
         assert_eq!(folded_layer, layer_2_eval);
@@ -340,7 +317,7 @@ mod test {
         let folded_layer = MultiplicativeFriFolder::compute_next_fri_layer(
             layer_0.get_domain(),
             &layer_0_eval,
-            &eval_point,
+            eval_point,
         )
         .unwrap();
         assert_eq!(folded_layer, layer_1_eval);
@@ -364,7 +341,7 @@ mod test {
         let folded_layer = MultiplicativeFriFolder::compute_next_fri_layer(
             layer_0.get_domain(),
             &layer_0_eval,
-            &eval_point,
+            eval_point,
         )
         .unwrap();
         assert_eq!(folded_layer, layer_2_eval);
