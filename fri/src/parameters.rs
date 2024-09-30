@@ -6,6 +6,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 #[allow(dead_code)]
+#[derive(Clone)]
 pub struct FriParameters<F: FftField, E: EvaluationDomain<F>> {
     #[serde(skip)]
     pub ph: PhantomData<F>,
@@ -70,18 +71,4 @@ impl<F: FftField, E: EvaluationDomain<F>> FriParameters<F, E> {
         self.fft_domains = fft_domains;
         self
     }
-}
-
-#[allow(dead_code)]
-pub struct FriProverConfig {
-    pub max_non_chunked_layer_size: u64,
-    pub n_chunks_between_layers: usize,
-    pub log_n_max_in_memory_fri_layer_elements: usize,
-}
-
-#[allow(dead_code)]
-impl FriProverConfig {
-    pub const DEFAULT_MAX_NON_CHUNKED_LAYER_SIZE: u64 = 32768;
-    pub const DEFAULT_NUMBER_OF_CHUNKS_BETWEEN_LAYERS: usize = 32;
-    pub const ALL_IN_MEMORY_LAYERS: usize = 63;
 }
