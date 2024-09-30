@@ -57,10 +57,12 @@ pub fn apply_fri_layers<F: FftField + PrimeField, E: EvaluationDomain<F>>(
         let mut next_layer = Vec::with_capacity(cur_layer.len() / 2);
         for j in (0..cur_layer.len()).step_by(2) {
             let res = MultiplicativeFriFolder::next_layer_element_from_two_previous_layer_elements(
-                &cur_layer[j],
-                &cur_layer[j + 1],
-                &curr_eval_point.unwrap(),
-                &get_field_element_at_index(&fft_domain, first_element_index + j),
+                cur_layer[j],
+                cur_layer[j + 1],
+                curr_eval_point.unwrap(),
+                get_field_element_at_index(&fft_domain, first_element_index + j)
+                    .inverse()
+                    .unwrap(),
             );
             next_layer.push(res);
         }

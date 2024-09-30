@@ -1,10 +1,12 @@
 on:
   push:
     branches:
+      - '**'
       - "!master"
 
   pull_request:
     branches:
+      - '**'
       - "!master"
 
 jobs:
@@ -18,6 +20,11 @@ jobs:
           toolchain: stable
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
+
+      - name: Run the license check
+        run: |
+          cargo install --locked cargo-about
+          cargo about generate --format json --fail --all-features > /dev/null
 
       - name: Run cargo test
         run: cargo test --all-features

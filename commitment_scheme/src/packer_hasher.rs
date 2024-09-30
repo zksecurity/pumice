@@ -63,8 +63,9 @@ impl<F: PrimeField, H: Hasher<F, Output = [u8; 32]>> PackerHasher<F, H> {
         if is_merkle_layer
             || (self.n_elements_in_package == 2 && self.size_of_element == H::DIGEST_NUM_BYTES)
         {
-            assert!(
-                data.len() / n_packages == 2 * H::DIGEST_NUM_BYTES,
+            assert_eq!(
+                data.len(),
+                n_packages * 2 * H::DIGEST_NUM_BYTES,
                 "Data size is wrong."
             );
             return hash_elements_two_to_one::<F, H>(data);
