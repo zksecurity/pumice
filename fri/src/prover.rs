@@ -53,7 +53,6 @@ impl<
         channel: &mut FSProverChannel<F, P, W>,
         layer: Arc<dyn FriLayer<F, Radix2EvaluationDomain<F>>>,
         fri_step: usize,
-        _i: usize,
     ) -> Arc<dyn FriLayer<F, Radix2EvaluationDomain<F>>> {
         if fri_step != 0 {
             let mut current_layer: Arc<dyn FriLayer<F, Radix2EvaluationDomain<F>>> = layer;
@@ -94,12 +93,8 @@ impl<
 
             assert!((layer_num == 1) || (fri_step != 0));
 
-            current_layer = FriProver::<F, P, W>::create_next_fri_layer(
-                channel,
-                current_layer,
-                fri_step,
-                layer_num,
-            );
+            current_layer =
+                FriProver::<F, P, W>::create_next_fri_layer(channel, current_layer, fri_step);
 
             current_layer = Arc::new(FriLayerReal::new_from_prev_layer(&*current_layer));
 
@@ -109,7 +104,7 @@ impl<
 
             let committed_layer = FriCommittedLayer::new(
                 next_fri_step,
-                current_layer.clone_arc(),
+                current_layer.clone(),
                 self.params.clone(),
                 layer_num,
                 F::MODULUS_BIT_SIZE.div_ceil(8) as usize,
@@ -148,7 +143,7 @@ impl<
             }
             deg
         };
-        let degree_bound = self.params.last_layer_degree_bound as usize;
+        let degree_bound = self.params.last_layer_degree_bound;
         assert!(degree < degree_bound);
 
         let coeffs_mont = to_mont_repr(&[coefficients.to_vec()], self.mont_r);
@@ -194,11 +189,7 @@ pub fn to_mont_repr<F: PrimeField>(segment: &[Vec<F>], mont_r: F) -> Vec<Vec<F>>
     let mut result: Vec<Vec<F>> = Vec::with_capacity(segment.len());
 
     for row in segment.iter() {
-        let mut new_row = Vec::with_capacity(row.len());
-        for element in row.iter() {
-            new_row.push(*element * mont_r);
-        }
-        result.push(new_row);
+        result.push(row.iter().cloned().map(|e| e * mont_r).collect());
     }
 
     result
@@ -225,7 +216,7 @@ mod test {
     fn test_fri_correctness_with(
         log2_eval_domain: usize,
         fri_step_list: Vec<usize>,
-        last_layer_degree_bound: u64,
+        last_layer_degree_bound: usize,
         n_queries: usize,
         proof_of_work_bits: usize,
         seed: u64,
