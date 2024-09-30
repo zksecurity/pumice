@@ -1,3 +1,4 @@
+mod details;
 mod folder;
 mod lde;
 mod parameters;

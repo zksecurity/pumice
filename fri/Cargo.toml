@@ -15,3 +15,6 @@ serde_json.workspace = true
 serde.workspace = true
 commitment_scheme = { path = "../commitment_scheme" }
 anyhow.workspace = true
+
+[dev-dependencies]
+rand.workspace = true

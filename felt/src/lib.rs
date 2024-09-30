@@ -43,7 +43,7 @@ pub fn felt_252_to_hex<F: PrimeField>(felt: &F) -> String {
 }
 
 pub fn byte_size<F: PrimeField>() -> usize {
-    (F::MODULUS_BIT_SIZE.div_ceil(8) * 8) as usize
+    F::MODULUS_BIT_SIZE.div_ceil(8) as usize
 }
 
 #[cfg(test)]
