@@ -4,10 +4,19 @@ use felt::byte_size;
 use randomness::Prng;
 use sha3::Digest;
 
-use crate::{lde::MultiplicativeLDE, parameters::FriParameters};
+use crate::{
+    details::{
+        apply_fri_layers, choose_query_indices, get_table_prover_row, get_table_prover_row_col,
+        next_layer_data_and_integrity_queries, second_layer_queries_to_first_layer_queries,
+    },
+    lde::MultiplicativeLDE,
+    parameters::FriParameters,
+    stone_domain::change_order_of_elements_in_domain,
+};
 use channel::{fs_verifier_channel::FSVerifierChannel, Channel, VerifierChannel};
 use commitment_scheme::{
-    make_commitment_scheme_verifier, table_verifier::TableVerifier, CommitmentHashes,
+    make_commitment_scheme_verifier, table_utils::RowCol, table_verifier::TableVerifier,
+    CommitmentHashes,
 };
 
 #[allow(dead_code)]
@@ -24,15 +33,25 @@ pub trait FriVerifierTrait<
 >
 {
     fn verify_fri(&mut self) -> Result<(), anyhow::Error> {
-        self.read_eval_points()?;
         self.read_commitments()?;
         self.read_last_layer_coefficients()?;
+
+        self.query_phase();
+
+        self.verify_first_layer()?;
+        self.verify_inner_layers()?;
+        self.verify_last_layer()?;
         Ok(())
     }
 
-    fn read_eval_points(&mut self) -> Result<(), anyhow::Error>;
     fn read_commitments(&mut self) -> Result<(), anyhow::Error>;
     fn read_last_layer_coefficients(&mut self) -> Result<(), anyhow::Error>;
+
+    fn query_phase(&mut self);
+
+    fn verify_first_layer(&mut self) -> Result<(), anyhow::Error>;
+    fn verify_inner_layers(&mut self) -> Result<(), anyhow::Error>;
+    fn verify_last_layer(&mut self) -> Result<(), anyhow::Error>;
 }
 
 #[allow(dead_code)]
@@ -62,11 +81,11 @@ impl<
         FQ: FirstLayerQueriesCallback<F>,
     > FriVerifierTrait<F, P, W, FQ> for FriVerifier<F, P, W, FQ>
 {
-    fn read_eval_points(&mut self) -> Result<(), anyhow::Error> {
-        let mut _basis_index = 0;
+    fn read_commitments(&mut self) -> Result<(), anyhow::Error> {
+        let mut basis_index = 0;
         for i in 0..self.n_layers {
             let cur_fri_step = self.params.fri_step_list[i];
-            _basis_index += cur_fri_step;
+            basis_index += cur_fri_step;
 
             if i == 0 {
                 if self.params.fri_step_list[0] != 0 {
@@ -75,15 +94,6 @@ impl<
             } else {
                 self.eval_points.push(self.channel.draw_felem());
             }
-        }
-        Ok(())
-    }
-
-    fn read_commitments(&mut self) -> Result<(), anyhow::Error> {
-        let mut basis_index = 0;
-        for i in 0..self.n_layers {
-            let cur_fri_step = self.params.fri_step_list[i];
-            basis_index += cur_fri_step;
 
             if i < self.n_layers - 1 {
                 let coset_size = 1 << self.params.fri_step_list[i + 1];
@@ -100,7 +110,7 @@ impl<
                 );
 
                 let mut table_verifier = TableVerifier::new(n_columns, commitment_scheme);
-                let _ = table_verifier.read_commitment(&mut self.channel);
+                table_verifier.read_commitment(&mut self.channel)?;
                 self.table_verifiers.push(table_verifier);
             }
         }
@@ -129,12 +139,125 @@ impl<
 
         let last_layer_basis_index = fri_step_sum;
         let lde_domain = self.params.fft_domains[last_layer_basis_index];
+
         let mut lde = MultiplicativeLDE::new(lde_domain, true);
-
         lde.add_coeff(&last_layer_coefficients_vector);
-        let evals = lde.batch_eval(lde_domain.element(0));
-        self.expected_last_layer.clone_from(&evals[0]);
 
+        let evals = lde.batch_eval(F::one());
+        // The stone code uses big-endian element ordering, while the arkworks code uses little-endian element ordering
+        self.expected_last_layer = change_order_of_elements_in_domain(&evals[0]);
+
+        Ok(())
+    }
+
+    fn query_phase(&mut self) {
+        self.query_indices = choose_query_indices(&self.params, &mut self.channel);
+
+        self.channel.states.begin_query_phase();
+    }
+
+    fn verify_first_layer(&mut self) -> Result<(), anyhow::Error> {
+        let first_fri_step = self.params.fri_step_list[0];
+        let first_layer_queries =
+            second_layer_queries_to_first_layer_queries(&self.query_indices, first_fri_step);
+        let first_layer_result = self.first_layer_callback.query(&first_layer_queries);
+
+        assert_eq!(
+            first_layer_result.len(),
+            first_layer_queries.len(),
+            "Returned number of queries does not match the number sent"
+        );
+        let first_layer_coset_size = 1 << first_fri_step;
+        for i in (0..first_layer_queries.len()).step_by(first_layer_coset_size) {
+            let result = apply_fri_layers(
+                &first_layer_result[i..i + first_layer_coset_size],
+                Some(self.first_eval_point),
+                &self.params,
+                0,
+                first_layer_queries[i] as usize,
+            );
+            self.query_results.push(result);
+        }
+        Ok(())
+    }
+
+    fn verify_inner_layers(&mut self) -> Result<(), anyhow::Error> {
+        let first_fri_step = self.params.fri_step_list[0];
+        let mut basis_index = 0;
+
+        for i in 0..self.n_layers - 1 {
+            let cur_fri_step = self.params.fri_step_list[i + 1];
+            basis_index += self.params.fri_step_list[i];
+
+            let (layer_data_queries, layer_integrity_queries) =
+                next_layer_data_and_integrity_queries(&self.params, &self.query_indices, i + 1);
+
+            let mut to_verify = self.table_verifiers[i]
+                .query(
+                    &mut self.channel,
+                    &layer_data_queries,
+                    &layer_integrity_queries,
+                )
+                .unwrap();
+
+            for j in 0..self.query_results.len() {
+                let query_index = self.query_indices[j] >> (basis_index - first_fri_step);
+                let query_loc = get_table_prover_row_col(query_index, cur_fri_step);
+                to_verify.insert(query_loc, self.query_results[j]);
+            }
+
+            let eval_point = self.eval_points[i];
+            for j in 0..self.query_results.len() {
+                let coset_size = 1 << cur_fri_step;
+                let mut coset_elements: Vec<F> = Vec::with_capacity(coset_size);
+                let coset_start = get_table_prover_row(
+                    self.query_indices[j] >> (basis_index - first_fri_step),
+                    cur_fri_step,
+                );
+
+                for k in 0..coset_size {
+                    coset_elements.push(*to_verify.get(&RowCol::new(coset_start, k)).unwrap());
+                }
+
+                self.query_results[j] = apply_fri_layers(
+                    &coset_elements,
+                    Some(eval_point),
+                    &self.params,
+                    i + 1,
+                    coset_start * (1 << cur_fri_step),
+                );
+            }
+
+            assert!(
+                self.table_verifiers[i]
+                    .verify_decommitment(&mut self.channel, &to_verify)
+                    .unwrap(),
+                "Layer {} failed decommitment",
+                i
+            );
+        }
+        Ok(())
+    }
+
+    fn verify_last_layer(&mut self) -> Result<(), anyhow::Error> {
+        let first_fri_step = self.params.fri_step_list[0];
+        let fri_step_sum: usize = self.params.fri_step_list.iter().sum();
+
+        assert!(
+            !self.expected_last_layer.is_empty(),
+            "ReadLastLayer() must be called before VerifyLastLayer()."
+        );
+
+        for (j, &query_result) in self.query_results.iter().enumerate() {
+            let query_index = self.query_indices[j] >> (fri_step_sum - first_fri_step);
+            let expected_value = self.expected_last_layer[query_index as usize];
+
+            assert_eq!(
+                query_result, expected_value,
+                "FRI query #{} is not consistent with the coefficients of the last layer.",
+                j
+            );
+        }
         Ok(())
     }
 }
