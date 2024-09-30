@@ -129,19 +129,6 @@ impl HashChain {
             carry = (carry1 | carry2) as u8;
         }
 
-        // print big_int
-        // println!("big_int: {:?}", big_int);
-        // // print raw_bytes
-        // println!("raw_bytes: {:?}", raw_bytes);
-
-        // // append raw_bytes to big_int
-        // let mut mixed_bytes = vec![0u8; raw_bytes.len() + big_int.len()];
-        // mixed_bytes[..big_int.len()].copy_from_slice(&big_int);
-        // mixed_bytes[big_int.len()..].copy_from_slice(raw_bytes);
-
-        // // print mixed_bytes
-        // println!("mixed_bytes: {:?}", mixed_bytes);
-
         // Hash the mixed_bytes to update the digest
         let result = keccak256!(&big_int, &raw_bytes);
         self.digest.copy_from_slice(&result);
