@@ -118,7 +118,7 @@ impl HashChain {
         let mut big_int = [0u8; 32];
         big_int.copy_from_slice(&self.digest);
 
-        let seed_increment_bytes = seed_increment.to_le_bytes();
+        let seed_increment_bytes = seed_increment.to_be_bytes();
         let mut carry = 0u8;
 
         for (i, byte) in seed_increment_bytes.iter().rev().enumerate() {
