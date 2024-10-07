@@ -130,7 +130,8 @@ impl<F: PrimeField, P: Prng, W: Digest> ProverChannel for FSProverChannel<F, P, 
         let mut raw_bytes = vec![0u8; 0];
         for &felem in felts {
             // maybe we should use flag should_convert_from_mont_when_initialize
-            let big_int = felem.div(self.mont_r_inv).into_bigint();
+            // let big_int = felem.div(self.mont_r_inv).into_bigint();
+            let big_int = felem.into_bigint();
             let bytes = big_int.to_bytes_be();
             raw_bytes.extend_from_slice(&bytes);
         }

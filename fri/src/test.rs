@@ -13,6 +13,7 @@ mod fri_tests {
     };
     use commitment_scheme::{CommitmentHashes, SupportedHashes};
     use felt::{hex, Felt252};
+    use num_bigint::BigUint;
     use paste::paste;
     use randomness::{keccak256::PrngKeccak256, Prng};
     use sha3::{Digest, Sha3_256};
@@ -48,6 +49,7 @@ mod fri_tests {
         pub params: FriParameters<Felt252, Radix2EvaluationDomain<Felt252>>,
         pub eval_vec: Vec<Felt252>,
         pub supported_hash: SupportedHashes,
+        pub mont_r: Felt252,
     }
 
     impl<W: Digest> FriTestFixtures for Keccak256FriTestTypes<W> {
@@ -93,11 +95,14 @@ mod fri_tests {
                 proof_of_work_bits,
             );
 
+            let mont_r = hex("0x7fffffffffffdf0ffffffffffffffffffffffffffffffffffffffffffffffe1");
+
             Self {
                 _ph: PhantomData,
                 params,
                 eval_vec,
                 supported_hash: SupportedHashes::Blake2s256,
+                mont_r,
             }
         }
 
@@ -126,13 +131,17 @@ mod fri_tests {
                 prover_channel.draw_felem();
             }
 
-            let coeffs_vec = vec![
+            let mut coeffs_vec = vec![
                 hex("0x4d56d0b02111c2b489d41c52dc75b6503ccef051c1b3f4331955ee202722c86"),
                 hex("0x3a698e872d28273e4223086c460d6f61aa0fd2586b0e4bdc1a6bad4a38ac9ae"),
                 hex("0x437ad2bcc666f5ab2d2ae34aef54206f2c1b60cac67209a3f7d537c8566d20e"),
             ];
 
-            // let _ = prover_channel.send_bytes(&coeffs_bytes);
+            // convert coeffs_vec to montgomery form
+            coeffs_vec = coeffs_vec
+                .iter()
+                .map(|coeff| coeff * &self.mont_r)
+                .collect();
             let _ = prover_channel.send_felts(&coeffs_vec);
 
             // let pow_bytes = vec![0, 0, 0, 0, 0, 60, 139];
@@ -143,7 +152,7 @@ mod fri_tests {
                 prover_channel.draw_number(1024);
             }
 
-            let first_layer_evals = vec![
+            let mut first_layer_evals = vec![
                 hex("0x3b169859b500d9f2b4fe19e662701da2e8ae2f69ccb4f9823ae31b9db698838"),
                 hex("0x328c64b926d309a915f58d93b14f6f4a14b9349e52bbff4095c892dfbb49834"),
                 hex("0x5cfd45df2ef0d8d5a2e1031131c84a49af6282ccbdc4d5d1f615f7c1d5221cd"),
@@ -158,6 +167,11 @@ mod fri_tests {
                 hex("0x617cc7be7cd5a3b14b76cdb12801fa7784f414112a5ffc74f826ca327a19a8e"),
             ];
 
+            // convert coeffs_vec to montgomery form
+            first_layer_evals = first_layer_evals
+                .iter()
+                .map(|coeff| coeff * &self.mont_r)
+                .collect();
             let _ = prover_channel.send_felts(&first_layer_evals);
 
             let first_layer_decommitments = vec![
@@ -235,13 +249,18 @@ mod fri_tests {
                 let _ = prover_channel.send_decommit_node(node);
             }
 
-            let second_layer_evals = vec![
+            let mut second_layer_evals = vec![
                 hex("0x1ed573c763647053fdb084c8ab9bd0773c78b006d9efca09f99063e0f2676da"),
                 hex("0x450df06879222711f99947cc9519193eb5913ff0bdcb2b30aef4bed4a8faf74"),
                 hex("0x7d2af22f1b20026d6a3802e3ec6db2cea2e95754231e252bcbaf7a09c8767d1"),
                 hex("0x327be53f5e29e44c667d791b0d5ae932045aa39e0234e943cdde8113d3a2ea0"),
             ];
 
+            // convert second_layer_evals to montgomery form
+            second_layer_evals = second_layer_evals
+                .iter()
+                .map(|coeff| coeff * &self.mont_r)
+                .collect();
             let _ = prover_channel.send_felts(&second_layer_evals);
 
             let second_layer_decommitment_node = vec![
@@ -303,7 +322,7 @@ mod fri_tests {
                 let _ = prover_channel.send_decommit_node(node);
             }
 
-            let third_layer_evals = vec![
+            let mut third_layer_evals = vec![
                 hex("0x7337d35628e7bb159b48fa8ce05544f9d11bed81bd7b48969536138aaa576c1"),
                 hex("0x16aa6c6d0d718bc2c6e67fdcd76433b67f5ad9a2f986f64d461d8443edead06"),
                 hex("0x2428af41a81a61c18ab64cb1a9efee81d527fe0b1f774937aecb67e50ae6c39"),
@@ -334,6 +353,11 @@ mod fri_tests {
                 hex("0x1fc9374c591d4d9fec3e37b706392ebb77ee4efb05a868f7eb47ae7358e6595"),
             ];
 
+            // convert third_layer_evals to montgomery form
+            third_layer_evals = third_layer_evals
+                .iter()
+                .map(|coeff| coeff * &self.mont_r)
+                .collect();
             let _ = prover_channel.send_felts(&third_layer_evals);
 
             let third_layer_decommitment_node = vec![

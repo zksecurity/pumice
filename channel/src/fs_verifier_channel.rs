@@ -134,8 +134,9 @@ impl<F: PrimeField, P: Prng, W: Digest> VerifierChannel for FSVerifierChannel<F,
 
         for chunk in raw_bytes.chunks_exact(chunk_bytes_size) {
             // maybe we should use flag should_convert_from_mont_when_initialize
-            let mut felt = Self::Field::from_be_bytes_mod_order(chunk);
-            felt.mul_assign(self.mont_r_inv);
+            // let mut felt = Self::Field::from_be_bytes_mod_order(chunk);
+            let felt = Self::Field::from_be_bytes_mod_order(chunk);
+            // felt.mul_assign(self.mont_r_inv);
             felts.push(felt);
         }
 

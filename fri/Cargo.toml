@@ -14,6 +14,7 @@ serde_json.workspace = true
 serde.workspace = true
 commitment_scheme = { path = "../commitment_scheme" }
 anyhow.workspace = true
+num-bigint.workspace = true
 
 [dev-dependencies]
 paste.workspace = true
