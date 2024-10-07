@@ -15,17 +15,12 @@ pub fn second_layer_queries_to_first_layer_queries(
     query_indices: &[u64],
     first_fri_step: usize,
 ) -> Vec<u64> {
-    let first_layer_coset_size = 1 << first_fri_step;
-    let mut first_layer_queries = Vec::with_capacity(query_indices.len() * first_layer_coset_size);
-
-    for &idx in query_indices {
-        for i in (idx * first_layer_coset_size as u64)..((idx + 1) * first_layer_coset_size as u64)
-        {
-            first_layer_queries.push(i);
-        }
-    }
-
-    first_layer_queries
+    let first_layer_coset_size = (1 << first_fri_step) as u64;
+    query_indices
+        .iter()
+        .copied()
+        .flat_map(|idx| (idx * first_layer_coset_size)..((idx + 1) * first_layer_coset_size))
+        .collect()
 }
 
 // Computes the element from the next FRI layer,
@@ -34,12 +29,12 @@ pub fn second_layer_queries_to_first_layer_queries(
 // next_layer_element_from_two_previous_layer_elements().
 pub fn apply_fri_layers<F: FftField + PrimeField, E: EvaluationDomain<F>>(
     elements: &[F],
-    eval_point: Option<F>,
+    eval_point: &F,
     params: &FriParameters<F, E>,
     layer_num: usize,
     mut first_element_index: usize,
 ) -> F {
-    let mut curr_eval_point = eval_point;
+    let mut curr_eval_point = *eval_point;
     let mut cumulative_fri_step = 0;
     for i in 0..layer_num {
         cumulative_fri_step += params.fri_step_list[i];
@@ -54,10 +49,6 @@ pub fn apply_fri_layers<F: FftField + PrimeField, E: EvaluationDomain<F>>(
 
     let mut cur_layer = elements.to_vec();
     for basis_index in cumulative_fri_step..(cumulative_fri_step + layer_fri_step) {
-        assert!(
-            curr_eval_point.is_some(),
-            "evaluation point doesn't have a value"
-        );
         let fft_domain = params.fft_domains[basis_index];
 
         let mut next_layer = Vec::with_capacity(cur_layer.len() / 2);
@@ -65,7 +56,7 @@ pub fn apply_fri_layers<F: FftField + PrimeField, E: EvaluationDomain<F>>(
             let res = MultiplicativeFriFolder::next_layer_element_from_two_previous_layer_elements(
                 cur_layer[j],
                 cur_layer[j + 1],
-                curr_eval_point.unwrap(),
+                curr_eval_point,
                 get_field_element_at_index(&fft_domain, first_element_index + j)
                     .inverse()
                     .unwrap(),
@@ -75,7 +66,7 @@ pub fn apply_fri_layers<F: FftField + PrimeField, E: EvaluationDomain<F>>(
 
         cur_layer = next_layer;
         // ApplyBasisTransform just calculates square of curr_eval_point
-        curr_eval_point = Some(curr_eval_point.unwrap() * curr_eval_point.unwrap());
+        curr_eval_point = curr_eval_point.square();
         first_element_index /= 2;
     }
 
@@ -190,7 +181,7 @@ mod tests {
         // fri_step = 1.
         let elements: Vec<Felt252> = (0..2).map(|_| Felt252::rand(&mut rng)).collect();
         let coset_offset = 4;
-        let fri_out = apply_fri_layers(&elements, Some(eval_point), &params, 0, coset_offset);
+        let fri_out = apply_fri_layers(&elements, &eval_point, &params, 0, coset_offset);
         let two_to_one_out =
             MultiplicativeFriFolder::next_layer_element_from_two_previous_layer_elements(
                 elements[0],
@@ -205,7 +196,7 @@ mod tests {
         // fri_step = 2.
         let elements2: Vec<Felt252> = (0..4).map(|_| Felt252::rand(&mut rng)).collect();
         let coset_offset2 = 12;
-        let fri_out2 = apply_fri_layers(&elements2, Some(eval_point), &params, 1, coset_offset2);
+        let fri_out2 = apply_fri_layers(&elements2, &eval_point, &params, 1, coset_offset2);
 
         let fold_0_1 = MultiplicativeFriFolder::next_layer_element_from_two_previous_layer_elements(
             elements2[0],
@@ -254,7 +245,7 @@ mod tests {
             let x = &get_field_element_at_index(&bases[0], i as usize);
             elements.push(poly.evaluate(x));
         }
-        let res = apply_fri_layers(&elements, Some(eval_point), &params, 0, 0);
+        let res = apply_fri_layers(&elements, &eval_point, &params, 0, 0);
         let correction_factor = Felt252::from(1 << fri_step);
         assert_eq!(poly.evaluate(&eval_point) * correction_factor, res);
     }
