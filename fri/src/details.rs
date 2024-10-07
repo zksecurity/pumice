@@ -50,6 +50,7 @@ pub fn apply_fri_layers<F: FftField + PrimeField, E: EvaluationDomain<F>>(
     let mut cur_layer = elements.to_vec();
     for basis_index in cumulative_fri_step..(cumulative_fri_step + layer_fri_step) {
         let fft_domain = params.fft_domains[basis_index];
+
         let mut next_layer = Vec::with_capacity(cur_layer.len() / 2);
         for j in (0..cur_layer.len()).step_by(2) {
             let res = MultiplicativeFriFolder::next_layer_element_from_two_previous_layer_elements(
@@ -162,6 +163,7 @@ mod tests {
         folder::MultiplicativeFriFolder,
         stone_domain::{get_field_element_at_index, make_fft_domains},
     };
+    use ark_ff::Field;
     use ark_ff::UniformRand;
     use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
     use felt::Felt252;
@@ -185,7 +187,9 @@ mod tests {
                 elements[0],
                 elements[1],
                 eval_point,
-                get_field_element_at_index(&bases[0], coset_offset),
+                get_field_element_at_index(&bases[0], coset_offset)
+                    .inverse()
+                    .unwrap(),
             );
         assert_eq!(fri_out, two_to_one_out);
 
@@ -198,20 +202,26 @@ mod tests {
             elements2[0],
             elements2[1],
             eval_point,
-            get_field_element_at_index(&bases[1], coset_offset2),
+            get_field_element_at_index(&bases[1], coset_offset2)
+                .inverse()
+                .unwrap(),
         );
         let fold_2_3 = MultiplicativeFriFolder::next_layer_element_from_two_previous_layer_elements(
             elements2[2],
             elements2[3],
             eval_point,
-            get_field_element_at_index(&bases[1], coset_offset2 + 2),
+            get_field_element_at_index(&bases[1], coset_offset2 + 2)
+                .inverse()
+                .unwrap(),
         );
         let two_to_one_out2 =
             MultiplicativeFriFolder::next_layer_element_from_two_previous_layer_elements(
                 fold_0_1,
                 fold_2_3,
                 eval_point * eval_point,
-                get_field_element_at_index(&bases[2], coset_offset2 / 2),
+                get_field_element_at_index(&bases[2], coset_offset2 / 2)
+                    .inverse()
+                    .unwrap(),
             );
         assert_eq!(fri_out2, two_to_one_out2);
     }

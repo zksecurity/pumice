@@ -128,10 +128,7 @@ impl<F: PrimeField, P: Prng, W: Digest> TableVerifier<F, P, W> {
 mod tests {
     use super::*;
     use crate::SupportedHashes;
-    use crate::{
-        make_commitment_scheme_prover, make_commitment_scheme_verifier, table_prover::TableProver,
-        CommitmentHashes,
-    };
+    use crate::{make_commitment_scheme_verifier, table_prover::TableProver, CommitmentHashes};
     use ark_ff::UniformRand;
     use channel::fs_prover_channel::FSProverChannel;
     use channel::ProverChannel;
@@ -150,7 +147,6 @@ mod tests {
         integrity_queries: &BTreeSet<RowCol>,
     ) -> Vec<u8> {
         let n_rows = n_rows_per_segment * n_segments;
-        let size_of_row = field_element_size * n_columns;
 
         assert_eq!(table_data.len(), n_columns);
 
@@ -175,16 +171,15 @@ mod tests {
 
         let commitment_hashes = CommitmentHashes::from_single_hash(SupportedHashes::Blake2s256);
 
-        let commitment_scheme = make_commitment_scheme_prover(
-            size_of_row,
-            n_rows_per_segment,
+        let mut table_prover = TableProver::new(
             n_segments,
+            n_rows_per_segment,
+            n_columns,
+            field_element_size,
             0,
             commitment_hashes,
-            n_columns,
+            felt::hex("0x7fffffffffffdf0ffffffffffffffffffffffffffffffffffffffffffffffe1"),
         );
-
-        let mut table_prover = TableProver::new(n_columns, commitment_scheme);
 
         for (i, segment) in segment_data.iter().enumerate() {
             let segment_slice: Vec<Vec<Felt252>> =
@@ -232,6 +227,8 @@ mod tests {
         integrity_queries: &BTreeSet<RowCol>,
         table_data: Vec<Vec<Felt252>>,
     ) {
+        let mont_r: Felt252 =
+            felt::hex("0x7fffffffffffdf0ffffffffffffffffffffffffffffffffffffffffffffffe1");
         let n_rows = n_rows_per_segment * n_segments;
         let size_of_row = field_element_size * n_columns;
 
@@ -257,16 +254,18 @@ mod tests {
                 "Data query not found in response"
             );
 
+            // channel receives data in Mont form thus data_for_verification is in Mont form
+            // Table Data is in Standard form, convert it to Mont form and then compare
             assert_eq!(
                 *data_for_verification.get(q).unwrap(),
-                table_data[q.get_col()][q.get_row()],
+                mont_r * table_data[q.get_col()][q.get_row()],
                 "Incorrect response to data query."
             );
         }
 
-        // Check verification
+        // Check verification, convert data to Mont form and then insert
         for q in integrity_queries.iter() {
-            data_for_verification.insert(*q, table_data[q.get_col()][q.get_row()]);
+            data_for_verification.insert(*q, mont_r * table_data[q.get_col()][q.get_row()]);
         }
 
         assert!(table_verifier
@@ -278,134 +277,35 @@ mod tests {
     fn test_table_verifier() {
         let field_element_size = 32;
         let n_columns = 2;
-        let n_segments = 4;
-        let n_rows_per_segment = 4;
-        let exp_proof = vec![
-            254, 54, 51, 40, 59, 10, 247, 47, 124, 35, 240, 199, 156, 65, 129, 175, 177, 74, 9, 96,
-            120, 22, 21, 170, 31, 113, 140, 220, 114, 208, 220, 250, 6, 95, 109, 109, 251, 22, 153,
-            161, 55, 125, 12, 95, 161, 104, 216, 183, 149, 115, 134, 247, 51, 163, 121, 233, 167,
-            197, 132, 15, 182, 148, 117, 51, 1, 50, 67, 97, 181, 239, 72, 42, 190, 142, 239, 211,
-            103, 154, 228, 168, 128, 141, 208, 173, 240, 244, 141, 181, 29, 12, 65, 197, 136, 42,
-            145, 174, 6, 16, 45, 96, 119, 232, 106, 62, 44, 229, 78, 139, 155, 200, 136, 34, 17, 8,
-            190, 184, 218, 52, 132, 122, 161, 121, 17, 210, 211, 74, 77, 77, 1, 107, 59, 186, 10,
-            232, 45, 229, 118, 109, 108, 178, 92, 244, 148, 20, 124, 4, 160, 8, 228, 133, 118, 248,
-            143, 159, 196, 141, 4, 226, 180, 147, 0, 40, 211, 121, 66, 64, 39, 25, 155, 97, 197,
-            228, 152, 171, 194, 190, 100, 245, 24, 173, 188, 194, 64, 179, 104, 180, 80, 139, 169,
-            34, 130, 107, 1, 171, 166, 71, 161, 193, 187, 14, 171, 177, 1, 219, 229, 30, 157, 11,
-            85, 247, 93, 249, 198, 152, 177, 239, 120, 229, 120, 132, 127, 223, 218, 92, 2, 174,
-            127, 23, 103, 12, 18, 62, 25, 124, 173, 148, 170, 156, 50, 90, 137, 199, 66, 125, 110,
-            184, 86, 191, 35, 61, 146, 98, 34, 29, 210, 245, 124, 89, 215, 81, 31, 168, 250, 216,
-            242, 206, 217, 243, 104, 110, 174, 232, 151, 108, 227, 167, 55, 188, 41, 123, 181, 143,
-            107, 145, 23, 68, 72, 111, 247, 35, 58, 126, 64, 85, 91, 10, 161, 23, 64, 27, 85, 199,
-            95, 174, 12, 158, 121, 194, 103, 165, 99, 100, 109, 11, 176, 187, 205, 102, 98, 194,
-            86, 188, 199, 235, 147, 86, 98, 170, 224, 38, 254, 122, 27, 207, 160, 75, 221, 135,
-            164, 212, 36, 210, 3, 229, 117, 44, 176, 3, 157, 9, 0, 107, 39, 186, 111, 153, 117, 32,
-            131, 119, 234, 36, 0, 52, 255, 66, 106, 43, 232, 130, 89, 207, 110, 166, 220, 52, 252,
-            123, 58, 129, 167, 32, 4, 17, 215, 137, 162, 238, 61, 225, 0, 235, 50, 138, 57, 175,
-            96, 158, 43, 114, 241, 204, 179, 158, 98, 151, 196, 206, 180, 178, 105, 40, 22, 80, 70,
-            133, 242, 83, 119, 80, 168, 206, 175, 233, 169, 116, 126, 68, 246, 128, 115, 186, 197,
-            115, 58, 210, 235, 99, 203, 156, 28, 28, 193, 235, 215, 174, 97, 43,
-        ];
-        let table_data: Vec<Vec<Felt252>> = vec![
-            vec![
-                felt::hex("0x65f6d6dfb1699a1377d0c5fa168d8b7957386f733a379e9a7c5840fb6947533"),
-                felt::hex("0x4ce193265b909a1b1f373f956b5c026cda37afe441a3379659120cf90867ebb"),
-                felt::hex("0x6102d6077e86a3e2ce54e8b9bc888221108beb8da34847aa17911d2d34a4d4d"),
-                felt::hex("0x7867f55a408590ccac3919bfe1040788453d4fb8b6ab705b2418bce53124ffe"),
-                felt::hex("0x15114125a3a1a01de81b8b5fc1384e7b7d4abca0f9f078f1fa189a59d3b90b8"),
-                felt::hex("0x24ab5ce86e9d9686df7734a44da1048c8b051a72234929c11e3468365e9b4a3"),
-                felt::hex("0x16b3bba0ae82de5766d6cb25cf494147c04a008e48576f88f9fc48d04e2b493"),
-                felt::hex("0x267ad9e76b76dc64ddeb1f41bf11164d99aef37fb56d7984a96119a42cde532"),
-                felt::hex("0x5a5a401f6ddb77e08f5009d681fff854c01192397585699b46fc2996c1208d9"),
-                felt::hex("0x71068b2c99ba944480fc9d0b7f78678ca49ebd2a47836f71c8c00a870eab999"),
-                felt::hex("0x39d59180ffb1c5a1a9198c05ed5e9d86965276304c1a66599994f39962022d4"),
-                felt::hex("0x48c660052643949216c449084afa58082ee4921bcf7f7ef2878a6580b1c89a0"),
-                felt::hex("0x66fdb7b072b4217309e3aa4c4a0b66a0e7624fc635c1f48864759589917f53a"),
-                felt::hex("0x33073c99572593b5f7585704eb11868234024bfbe034b7de3e2973f025ea21"),
-                felt::hex("0x336331fa834eeba35da2c5538707e9c864434596162308abd2de97827b9ec0a"),
-                felt::hex("0x360d067d8fa88671d6d7691dac08071b0777a5ee8e05f1f4da4c83abbe64c20"),
-            ],
-            vec![
-                felt::hex("0x1324361b5ef482abe8eefd3679ae4a8808dd0adf0f48db51d0c41c5882a91ae"),
-                felt::hex("0x3ea787108255965c626316af351fc4ab788c61372eb43f46924281d24b440e1"),
-                felt::hex("0x34c8d9285643d3ef01bcea57dbcb9ab8cc7572140a9436758e10fe9aea9c06b"),
-                felt::hex("0x5b88c400264850250013e86e489ddedb5a2754f0d957d0047cc8dd06497528e"),
-                felt::hex("0x1143a9d6989475e6e319adfcb6be5a5f37465648a31537200412e3b1b6d6141"),
-                felt::hex("0x2efa7ae3601eb7ad91122b7a0a43bc06943dfd212e93bc84034b2f4b27b588d"),
-                felt::hex("0x28d379424027199b61c5e498abc2be64f518adbcc240b368b4508ba922826b"),
-                felt::hex("0x1aba647a1c1bb0eabb101dbe51e9d0b55f75df9c698b1ef78e578847fdfda5c"),
-                felt::hex("0x3ae328a629b7510829aa9f369bdbff56b88d04d763630a10915196ea915da19"),
-                felt::hex("0x508c970a69e629fcdab35e82eaadea45a57a2468bf2b8f77401cf6471eabf8e"),
-                felt::hex("0x6a8a3624b6e9801a2ff4d2f0f34ccfb7e22a2c055ac6071d9b99783f2c616c7"),
-                felt::hex("0x2ae7f17670c123e197cad94aa9c325a89c7427d6eb856bf233d9262221dd2f5"),
-                felt::hex("0x2e83b57723d7dd69378b113c4b50f15d2ef8b8550f8125d7f7076eeaafbd017"),
-                felt::hex("0x2c88cfd74c8e77b767fcac792b9a8a65a87393fefca890557df56f0ff8e9275"),
-                felt::hex("0x574248ac5a307e2ebf5070b5b3e3dc4661a652c6c9330e1c69d510ee91a8f4e"),
-                felt::hex("0x10f23fcd14fbeb174d90599d5fcd35ca93c0f860c48a9c8447bc1f3220f89cc"),
-            ],
-        ];
-        let data_queries = BTreeSet::from([RowCol::new(0, 0), RowCol::new(6, 0)]);
-        let integrity_queries =
-            BTreeSet::from([RowCol::new(2, 1), RowCol::new(7, 0), RowCol::new(11, 0)]);
-        let proof = get_proof(
-            field_element_size,
-            n_columns,
-            n_segments,
-            n_rows_per_segment,
-            table_data.clone(),
-            &data_queries,
-            &integrity_queries,
-        );
-        assert_eq!(proof, exp_proof);
-        test_table_verifier_with(
-            field_element_size,
-            n_columns,
-            n_segments,
-            n_rows_per_segment,
-            exp_proof,
-            &data_queries,
-            &integrity_queries,
-            table_data,
-        );
-
-        let field_element_size = 32;
-        let n_columns = 2;
-        let n_segments = 4;
+        let n_segments = 2;
         let n_rows_per_segment = 2;
         let exp_proof = vec![
-            193, 165, 8, 153, 66, 225, 55, 241, 104, 82, 160, 74, 149, 163, 243, 50, 11, 136, 152,
-            41, 115, 95, 232, 181, 236, 195, 141, 18, 86, 71, 196, 24, 2, 242, 10, 108, 74, 153,
-            114, 164, 139, 50, 123, 195, 68, 213, 156, 247, 134, 49, 255, 19, 201, 87, 214, 74,
-            162, 52, 81, 192, 161, 90, 200, 29, 90, 234, 183, 140, 43, 51, 224, 71, 192, 111, 232,
-            21, 40, 34, 8, 228, 159, 251, 208, 136, 158, 177, 78, 138, 247, 251, 234, 54, 118, 231,
-            108, 205, 113, 133, 20, 120, 208, 210, 212, 69, 200, 241, 150, 184, 53, 49, 30, 119,
-            160, 169, 145, 69, 70, 188, 154, 254, 220, 184, 71, 86, 181, 243, 118, 80, 183, 168,
-            112, 218, 168, 45, 162, 19, 16, 56, 61, 192, 48, 201, 69, 221, 54, 206, 61, 103, 9,
-            245, 149, 235, 90, 204, 14, 29, 49, 95, 7, 187,
+            71, 132, 165, 10, 119, 246, 172, 81, 234, 60, 193, 139, 122, 35, 61, 93, 85, 9, 22, 34,
+            250, 70, 170, 255, 82, 218, 88, 82, 84, 145, 39, 11, 4, 208, 101, 14, 35, 199, 138,
+            153, 75, 54, 23, 135, 115, 134, 216, 97, 166, 88, 109, 18, 69, 44, 89, 44, 9, 201, 55,
+            194, 209, 49, 166, 53, 2, 73, 17, 183, 56, 6, 227, 237, 209, 59, 211, 11, 109, 20, 169,
+            85, 36, 173, 230, 149, 238, 111, 108, 232, 153, 214, 98, 11, 132, 91, 27, 200, 0, 27,
+            43, 14, 57, 196, 188, 170, 115, 109, 60, 183, 208, 44, 115, 250, 44, 40, 67, 107, 124,
+            247, 184, 4, 195, 58, 23, 195, 137, 187, 25, 111, 224, 9, 210, 47, 106, 211, 251, 35,
+            206, 220, 172, 66, 250, 42, 183, 80, 205, 160, 148, 212, 135, 235, 23, 114, 243, 42,
+            33, 247, 209, 236, 1, 107, 4, 119, 6, 89, 43, 202, 223, 252, 111, 129, 170, 229, 106,
+            165, 229, 53, 186, 154, 219, 87, 23, 23, 172, 53, 211, 64, 58, 149, 134, 178, 200, 64,
         ];
         let table_data: Vec<Vec<Felt252>> = vec![
             vec![
-                felt::hex("0x34b3c38e4e7aebf78bb19da93486e7c70046dd75ce5da061f1099782230ff30"),
-                felt::hex("0x2f20a6c4a9972a48b327bc344d59cf78631ff13c957d64aa23451c0a15ac81d"),
-                felt::hex("0xefa810976794351e5f2b78554c3d5bdc6dfbe76d441b33c47ce4364023042f"),
-                felt::hex("0x34145cb1422ba56f8bdae62be85e5b81b122e789826cf1966490ad8db0a42e5"),
-                felt::hex("0x101591ecb80ab91a577b9aad4ce5320ae793422f0534fdd2e2240d3ce530f47"),
-                felt::hex("0x51d9ae1e146544be7b08f30f786cc5bc8be2ebb0b0549e8d5904d2a286b2835"),
-                felt::hex("0x4da5aa9a59777642aa1a9b6701b351963f9d1f0e6226fe7ffc62fba1afb31b8"),
-                felt::hex("0x279ea5b964d189390793acbe470ce189fe198fe9badb09b4382981b55c3a18f"),
+                felt::hex("0x29ec2635fe381f6dc572588d9697f3347bf6bb6598c7ba0c42b797204249a2d"),
+                felt::hex("0x24c62770e0423fc3ff78c418d3036e3f435ac98c1e23eba93d2780b518486e2"),
+                felt::hex("0x3a79b8864902faa95a0a33d56fc94b271e18d09122d45f14ba4fcface76ebb0"),
+                felt::hex("0x60d1bc1595eddea3b03ba0161ea300b914f61a5f49f2f553e0d3e77aff026de"),
             ],
             vec![
-                felt::hex("0xbca7e4d5c388df65db262f2f2581e7292865365f5852d4eea5fdec7c7ff2e"),
-                felt::hex("0x225f30f1c56910e184e49c3ecd669fefa8baca8e9c0f0ac90d9e62648ac5818"),
-                felt::hex("0x266efd21a0eb3dfce14f674587ff74ffab37e8744e5a8b8188a6f75474b1bb8"),
-                felt::hex("0x7f2cf6670d503fa47a2fcfe982ad520417694c981ec3213a6a0b315a91853f"),
-                felt::hex("0x1a04f47d001c1802b130735feb4cf8ac139d60409d1df0dbc84f0d11fe14fb2"),
-                felt::hex("0x14801d01e5a149db6a88d2ffb89c31c53f6f7e15ee11a0ed9c3c8a463c30a3b"),
-                felt::hex("0x14a6aab15336862b05fa608bfbf6af238512678f9f748e393b3f1bb669856f6"),
-                felt::hex("0x641b3182a1ecaa7770c6cdea8c5d52f9820aa511626fc7383bd8ea39d7d9556"),
+                felt::hex("0x4dfdff911ae2581ed87e19ff875034d604bc4fa4fb38f1299d41b989aa47250"),
+                felt::hex("0x5235d70e1f2230aea41a85f98316aab145f359e59942286adc8187d8005e454"),
+                felt::hex("0x37603476f5d3fa4ff2b8de6e7a5cb5d845db5afd1248ea2eb39b51e973eeee4"),
+                felt::hex("0x78b3b7931cdfd6cf65ffcd7a0c2c56efd7d1e718530e6b8ba2f13b32505983f"),
             ],
         ];
-        let data_queries = BTreeSet::from([RowCol::new(1, 0)]);
+        let data_queries = BTreeSet::from([RowCol::new(2, 1)]);
         let integrity_queries = BTreeSet::from([RowCol::new(1, 1)]);
         let proof = get_proof(
             field_element_size,
@@ -430,88 +330,68 @@ mod tests {
 
         let field_element_size = 32;
         let n_columns = 2;
-        let n_segments = 2;
-        let n_rows_per_segment = 2;
+        let n_segments = 4;
+        let n_rows_per_segment = 4;
         let exp_proof = vec![
-            163, 61, 160, 50, 58, 163, 46, 46, 144, 26, 189, 3, 73, 205, 186, 105, 80, 153, 14, 64,
-            202, 89, 173, 132, 33, 0, 8, 209, 212, 80, 182, 192, 0, 210, 42, 48, 209, 245, 11, 243,
-            202, 15, 91, 117, 182, 147, 221, 5, 146, 48, 120, 157, 62, 94, 190, 220, 29, 83, 207,
-            175, 70, 69, 183, 180, 1, 40, 210, 59, 100, 158, 198, 58, 39, 236, 218, 238, 119, 54,
-            0, 208, 242, 62, 75, 140, 46, 83, 252, 40, 207, 140, 175, 47, 214, 64, 54, 107, 6, 154,
-            126, 47, 100, 203, 203, 119, 211, 24, 94, 121, 58, 135, 85, 52, 177, 154, 115, 70, 9,
-            9, 240, 236, 162, 162, 154, 178, 216, 221, 148, 226, 48, 164, 217, 129, 217, 118, 121,
-            65, 11, 7, 102, 122, 85, 63, 234, 229, 157, 120, 247, 56, 68, 38, 203, 203, 19, 45, 76,
-            198, 216, 197, 202, 219, 48, 195, 62, 89, 68, 91, 79, 254, 27, 2, 193, 140, 159, 123,
-            81, 125, 215, 66, 149, 205, 50, 167, 187, 5, 192, 3, 241, 33, 212, 82, 160, 167,
+            213, 213, 177, 165, 226, 238, 237, 187, 239, 75, 171, 237, 159, 224, 47, 210, 113, 120,
+            159, 234, 156, 171, 107, 153, 45, 134, 125, 185, 165, 124, 165, 233, 5, 237, 195, 55,
+            176, 18, 11, 121, 210, 192, 153, 60, 189, 117, 57, 66, 231, 84, 41, 84, 66, 206, 224,
+            249, 109, 41, 65, 150, 14, 148, 211, 232, 2, 216, 198, 72, 53, 212, 63, 183, 4, 146,
+            91, 35, 60, 83, 218, 79, 179, 20, 126, 153, 119, 40, 177, 254, 36, 28, 161, 238, 102,
+            198, 127, 135, 1, 200, 118, 247, 247, 78, 83, 73, 118, 161, 178, 159, 159, 65, 4, 41,
+            45, 82, 178, 167, 234, 206, 188, 116, 56, 147, 74, 178, 145, 204, 2, 153, 178, 45, 50,
+            72, 90, 79, 144, 182, 0, 244, 104, 208, 111, 85, 29, 175, 116, 104, 65, 57, 18, 107,
+            89, 146, 44, 229, 213, 220, 123, 72, 12, 212, 252, 85, 91, 203, 200, 5, 229, 236, 68,
+            173, 25, 237, 210, 121, 5, 52, 247, 90, 21, 103, 127, 84, 37, 37, 69, 40, 140, 181, 87,
+            195, 90, 108, 114, 65, 181, 9, 236, 138, 141, 73, 182, 146, 120, 44, 92, 138, 222, 131,
+            83, 19, 247, 213, 203, 250, 148, 186, 41, 191, 150, 119, 100, 228, 98, 126, 130, 237,
+            197, 61, 214, 140, 250, 143, 57, 36, 44, 144, 103, 140, 113, 11, 207, 171, 86, 24, 246,
+            39, 241, 166, 125, 204, 64, 237, 68, 32, 248, 107, 0, 139, 2, 33, 73, 191, 229, 208,
+            174, 238, 94, 47, 252, 55, 92, 213, 9, 66, 150, 58, 127, 228, 239, 204, 37, 17, 54, 39,
+            91, 166, 17, 185, 71, 34, 116, 141, 254, 25, 176, 131, 165, 139, 132, 173, 34, 200,
+            157, 75, 92, 80, 245, 30, 92, 14, 238, 6, 61, 228, 51, 215, 105, 230, 54, 23,
         ];
-        let data_queries = BTreeSet::from([RowCol::new(0, 1)]);
-        let integrity_queries = BTreeSet::from([RowCol::new(2, 1)]);
-        let table_data = vec![
-            vec![
-                felt::hex("0xd22a30d1f50bf3ca0f5b75b693dd059230789d3e5ebedc1d53cfaf4645b7b4"),
-                felt::hex("0x1ac1fb9d0eeafa19dfc56830ff2edbf581f26d789da1d3ae07b63c759378593"),
-                felt::hex("0x69a7e2f64cbcb77d3185e793a875534b19a73460909f0eca2a29ab2d8dd94e2"),
-                felt::hex("0x4e89b01367ed9a45b9b10975fae4d5e2d29d0f7d668651af3a5860c703ebd0e"),
-            ],
-            vec![
-                felt::hex("0x128d23b649ec63a27ecdaee773600d0f23e4b8c2e53fc28cf8caf2fd640366b"),
-                felt::hex("0x38ef7a0b6c3ec5326f1b7085f8b386772c40aa489bb6bc696b6d6a6641b58f"),
-                felt::hex("0x14e5560b7d64f357ba56f9d7e1069cddd7077b08946774a6526f49e6a52df6"),
-                felt::hex("0x8e3860d765b88c45198a0389f9e70fc3f80dd4ca9e3122086f3b2fd46cd49b"),
-            ],
-        ];
-        let proof = get_proof(
-            field_element_size,
-            n_columns,
-            n_segments,
-            n_rows_per_segment,
-            table_data.clone(),
-            &data_queries,
-            &integrity_queries,
-        );
-        assert_eq!(proof, exp_proof);
-        test_table_verifier_with(
-            field_element_size,
-            n_columns,
-            n_segments,
-            n_rows_per_segment,
-            exp_proof,
-            &data_queries,
-            &integrity_queries,
-            table_data,
-        );
-
-        let field_element_size = 32;
-        let n_columns = 2;
-        let n_segments = 2;
-        let n_rows_per_segment = 2;
-        let exp_proof = vec![
-            117, 154, 26, 12, 245, 174, 21, 247, 76, 146, 171, 173, 168, 69, 77, 201, 119, 255,
-            216, 16, 224, 24, 236, 246, 26, 172, 156, 20, 2, 158, 208, 116, 6, 51, 58, 116, 136,
-            76, 255, 130, 148, 164, 10, 94, 142, 63, 57, 36, 91, 80, 135, 9, 107, 19, 89, 70, 171,
-            179, 138, 203, 65, 56, 71, 206, 0, 131, 236, 251, 134, 226, 39, 8, 28, 73, 163, 251,
-            31, 136, 75, 227, 194, 44, 68, 26, 123, 71, 244, 25, 247, 87, 203, 86, 54, 207, 89,
-            227, 7, 16, 235, 177, 127, 237, 120, 2, 189, 43, 76, 147, 187, 27, 40, 129, 93, 70, 78,
-            114, 123, 236, 35, 190, 180, 223, 22, 244, 44, 110, 143, 211, 139, 213, 109, 53, 238,
-            63, 71, 189, 49, 121, 83, 216, 81, 171, 110, 63, 244, 210, 142, 99, 113, 41, 18, 221,
-            79, 229, 148, 185, 143, 115, 204, 12,
-        ];
-        let data_queries = BTreeSet::from([RowCol::new(2, 0)]);
-        let integrity_queries = BTreeSet::from([RowCol::new(3, 0)]);
         let table_data: Vec<Vec<Felt252>> = vec![
             vec![
-                felt::hex("0x6511595ef10430d2f8528d0acec2e81be1ee9e76186f6e8b2c891b6dfceda8d"),
-                felt::hex("0x5022a1b86e36fd3dec29562add968244cd5ad09bbb2aa2ee918ba700fd651f0"),
-                felt::hex("0x6333a74884cff8294a40a5e8e3f39245b5087096b135946abb38acb413847ce"),
-                felt::hex("0x372aeaa69f776f2b6e5b18a6fa433b6dc209657bb8097f52dd1833d2187f7f0"),
+                felt::hex("0x6b61e5e37d71e0664a158a6b0b40746ca94948919796e73542f93e17d5a3607"),
+                felt::hex("0x2f398bd491bd26dc058c2ecd7bcf0258449b5014394d1f542dd7dd6d5a810f"),
+                felt::hex("0x2ce4d6c5b0c41db23fc9a7d0259c810a8bf78cba78693ce1de165e84ef331fb"),
+                felt::hex("0x1676f7e38853efe0993b0ca39770c85a2a74ab4410aff111ef09f731e3d8f02"),
+                felt::hex("0x3ce7cbdfa3e803f88330ee9dee4cc06e9fb31acc920bb86d7fff75adfce68d1"),
+                felt::hex("0x23ad43f3e074a0cabe1f4b71156ed8b3ba7c596b6093e458d4ee761ddeb54e1"),
+                felt::hex("0x76f3607f255412f819de7b7bcf7f7b382a35e632da12d2d6840dc7ff14ad425"),
+                felt::hex("0x569a30ef8867bf7ec22006eda33665baddc4c6821686f2d94c67dd0b2abd3f5"),
+                felt::hex("0x361e712a3255b0841239fcca9e774ee3b6e3350d1ec34c1f9bc6eadd81098a2"),
+                felt::hex("0x571887f985063922244e200898841d2a364397b7a06aac13e17eb0b733d2ac4"),
+                felt::hex("0x224465b14e6232f7f809e543d03e16cb632e0a206e94b5c56aabdfe98ec36cc"),
+                felt::hex("0x43ffbf71db9eed004425f8a2e215eb6d5d88dd12d5843605bbd8883d3b71c34"),
+                felt::hex("0x35d6274d307c0de2acb0aaafa0a576068a5f44f0f24070b5a415bb9b9015c9e"),
+                felt::hex("0x2ccc9300946d38a27347c686b1e065b9edfdf1a23154abc5d18ff273963bf73"),
+                felt::hex("0x2d244816b937b35975812b54429b9dd2cff556d25f87eb326f4e450507b104d"),
+                felt::hex("0x277c86abe7bde49b79da996f10b5907893b1af902c5a6df4b3a413ff238f73f"),
             ],
             vec![
-                felt::hex("0x9ddc2089369cbd1d2291933e9c58c82c819a64d36d22d5781bee83670a5e5d"),
-                felt::hex("0x559f66594e0e5576e00f3d95e01bd6de98af0ab071bed5348e9d1d690ede347"),
-                felt::hex("0x83ecfb86e227081c49a3fb1f884be3c22c441a7b47f419f757cb5636cf59e3"),
-                felt::hex("0x710ebb17fed7802bd2b4c93bb1b28815d464e727bec23beb4df16f42c6e8fd3"),
+                felt::hex("0x26a8ebb2008def3d50fd4e88d07c96abaec6a5b9905040423eb3b7a1c1437b9"),
+                felt::hex("0x28fdc6a84a1e295866196d8e0ab5f0ab23aaafc2ba1aefad3ed3c9575da610e"),
+                felt::hex("0x5e7e4d6c8a5be024d40682dd5be4ce44fa28d24b4d1c89104d8eb4f5c2cd6b2"),
+                felt::hex("0x497dd7f9ecade7d73e5423b822caec6a77af0a1f999b4a3a8da9313b344e3e6"),
+                felt::hex("0x76d1cffe494038f439b328505a8639c0a3853002362a55575f5cd93918cdf51"),
+                felt::hex("0x5eb0dd4ad0149429efa97f9f0c197c45324b9aea2a8a13b6fd0b6ffc9705d26"),
+                felt::hex("0xa3dd054500d84ed78114835e82b8909e46dbd76a8d26fdcf8d712f702ed7c"),
+                felt::hex("0x4d86fd464ead1cc4bc9107d591b1d6d34af4eb432b53b252a82b2bfa315fa24"),
+                felt::hex("0x1bf62c26db7d75f955b5f8bc4a8baf22ab9ef0856e668d7abaece61bda4662f"),
+                felt::hex("0x36db5201aa25816e94904c9427518a8f69d79f91b28e8aa9e9022503e53ee2e"),
+                felt::hex("0x195c33f1b5aef25657215324a9f5fa84a44b0ab837651df2457eae90957747b"),
+                felt::hex("0x66e09f5b69171a5ebae282fdb794cccdb3eada1a82daceb701921db3012d292"),
+                felt::hex("0x1bcd3608703d59c5be5343b3dbe98b06af419c427b3db2bd3a68d1c3b26b7f1"),
+                felt::hex("0x78204fae7022e05499174460bf6de3901d8f71a530321942ed959e2a55f3ca1"),
+                felt::hex("0x47ad85f8d4b82ac6733f2fa54430e0887931c2552439509b6c1f3b9fd7b3326"),
+                felt::hex("0x28f69d8bb4a99e6ea11efbc845291958d83fabbfe2937be8616c62f02142c45"),
             ],
         ];
+        let data_queries = BTreeSet::from([RowCol::new(7, 1), RowCol::new(11, 0)]);
+        let integrity_queries =
+            BTreeSet::from([RowCol::new(4, 1), RowCol::new(7, 0), RowCol::new(11, 1)]);
         let proof = get_proof(
             field_element_size,
             n_columns,
@@ -531,7 +411,7 @@ mod tests {
             &data_queries,
             &integrity_queries,
             table_data,
-        )
+        );
     }
 
     fn get_random_queries(

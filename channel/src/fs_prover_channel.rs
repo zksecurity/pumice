@@ -133,6 +133,7 @@ impl<F: PrimeField, P: Prng, W: Digest> ProverChannel for FSProverChannel<F, P, 
             // let big_int = felem.div(self.mont_r_inv).into_bigint();
             let big_int = felem.into_bigint();
             let bytes = big_int.to_bytes_be();
+            // println!("raw_bytes: {:?}", bytes);
             raw_bytes.extend_from_slice(&bytes);
         }
         self.send_bytes(&raw_bytes)?;
