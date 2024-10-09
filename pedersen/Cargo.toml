@@ -1,0 +1,10 @@
+[package]
+name = "pedersen"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ark-ff.workspace = true
+ark-ec.workspace = true
+felt = { path = "../felt"}
+num-bigint.workspace = true
