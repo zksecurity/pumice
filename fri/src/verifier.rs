@@ -18,6 +18,7 @@ use commitment_scheme::{
     make_commitment_scheme_verifier, table_utils::RowCol, table_verifier::TableVerifier,
     CommitmentHashes,
 };
+use num_bigint::BigUint;
 
 #[allow(dead_code)]
 pub trait FirstLayerQueriesCallback<F: FftField + PrimeField> {
@@ -72,8 +73,10 @@ pub struct FriVerifier<
     query_indices: Vec<u64>,
     query_results: Vec<F>,
     expected_last_layer: Vec<F>,
+    mont_r: F,
 }
 
+#[allow(dead_code)]
 impl<
         F: FftField + PrimeField,
         P: Prng + Clone + 'static,
@@ -109,7 +112,11 @@ impl<
                     n_columns,
                 );
 
-                let mut table_verifier = TableVerifier::new(n_columns, commitment_scheme);
+                let mut table_verifier = TableVerifier::new(
+                    n_columns,
+                    commitment_scheme,
+                    P::should_convert_from_mont_when_initialize(),
+                );
                 table_verifier.read_commitment(&mut self.channel)?;
                 self.table_verifiers.push(table_verifier);
             }
@@ -121,6 +128,11 @@ impl<
         let mut last_layer_coefficients_vector = self
             .channel
             .recv_felts(self.params.last_layer_degree_bound)?;
+
+        // convert from montgomery form to normal form
+        for coeff in &mut last_layer_coefficients_vector {
+            coeff.div_assign(&self.mont_r);
+        }
 
         let fri_step_sum: usize = self.params.fri_step_list.iter().sum();
         let last_layer_size = self.params.fft_domains[fri_step_sum].size();
@@ -171,7 +183,7 @@ impl<
         for i in (0..first_layer_queries.len()).step_by(first_layer_coset_size) {
             let result = apply_fri_layers(
                 &first_layer_result[i..i + first_layer_coset_size],
-                Some(self.first_eval_point),
+                &self.first_eval_point,
                 &self.params,
                 0,
                 first_layer_queries[i] as usize,
@@ -221,7 +233,7 @@ impl<
 
                 self.query_results[j] = apply_fri_layers(
                     &coset_elements,
-                    Some(eval_point),
+                    &eval_point,
                     &self.params,
                     i + 1,
                     coset_start * (1 << cur_fri_step),
@@ -277,6 +289,12 @@ impl<
         first_layer_callback: FQ,
     ) -> Self {
         let n_layers = params.fri_step_list.len();
+        let mont_r = {
+            let size = F::MODULUS_BIT_SIZE.div_ceil(8) * 8;
+            let mont_bigint = BigUint::from(2u64).modpow(&BigUint::from(size), &F::MODULUS.into());
+            F::from_bigint(<F as PrimeField>::BigInt::try_from(mont_bigint.clone()).unwrap())
+                .unwrap()
+        };
         Self {
             channel,
             params,
@@ -289,6 +307,7 @@ impl<
             query_indices: vec![],
             query_results: vec![],
             expected_last_layer: vec![],
+            mont_r,
         }
     }
 }
