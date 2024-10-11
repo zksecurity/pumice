@@ -19,19 +19,15 @@ pub fn change_order_of_elements_in_domain<F: FftField>(elements: &[F]) -> Vec<F>
     let size = elements.len().next_power_of_two();
     // byte size of usize - log_len
     let log_len = size.trailing_zeros() as usize;
-    // byte size of usize - log_len
-    println!("log_len: {}", log_len);
     let mut new_elements = Vec::with_capacity(size);
     for i in 0..size {
-        println!("i: {}", i);
-        println!("translate_index(i): {}", translate_index(i, log_len));
         new_elements.push(elements[translate_index(i, log_len)])
     }
 
     new_elements
 }
 
-fn translate_index(index: usize, log_len: usize) -> usize {
+pub fn translate_index(index: usize, log_len: usize) -> usize {
     let sft = std::mem::size_of::<usize>() * 8 - log_len;
     index.reverse_bits() >> sft
 }

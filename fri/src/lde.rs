@@ -55,10 +55,12 @@ impl<F: PrimeField> MultiplicativeLDE<F> {
     // The results are ordered according to the order that the LDEs were added.
     pub fn batch_eval(&self, offset: F) -> Vec<Vec<F>> {
         let eval_domain = self.base.get_coset(offset).unwrap();
+
+        // let eval_domain = self.base;
         let mut evals: Vec<Vec<F>> = vec![];
-        for lde_poly in self.ldes.iter() {
-            let evals_lde = lde_poly.evaluate_over_domain_by_ref(eval_domain);
-            evals.push(evals_lde.evals);
+        for lde in self.ldes.iter() {
+            let evals_lde = eval_domain.fft(lde);
+            evals.push(evals_lde);
         }
 
         evals
