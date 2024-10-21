@@ -1,11 +1,11 @@
 [workspace]
-members = ["felt", "commitment_scheme", "poseidon", "randomness", "channel", "fri"]
+members = ["felt", "commitment_scheme", "poseidon", "randomness", "channel", "fri", "pedersen"]
 resolver = "2"
 
 [workspace.dependencies]
 anyhow = "1.0.86"
-ark-ff = { git = "https://github.com/jaehunkim/algebra", branch = "v0.4.2-fix" }
-ark-poly = { git = "https://github.com/jaehunkim/algebra", branch = "v0.4.2-fix" }
+ark-ff = "0.4.2"
+ark-poly = "0.4.2"
 sha3 = "0.10.8"
 blake2 = "0.10.6"
 hex-literal = "0.4.1"
@@ -15,3 +15,5 @@ serde = { version = "1.0.205", features = ["derive"] }
 paste = "1.0"
 hex = "0.4"
 rand = "0.8"
+ark-ec = "0.4.2"
+lazy_static = "1.4.0"
