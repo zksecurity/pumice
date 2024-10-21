@@ -1,4 +1,4 @@
-use crate::hash_context::get_standard_pedersen_hash_context;
+use crate::{constants::PEDERSEN_CHUNK_SIZE, hash_context::PedersenHashContext};
 use ark_ff::{BigInt, BigInteger, Field, PrimeField};
 use felt::Felt252;
 use num_bigint::BigUint;
@@ -8,10 +8,9 @@ pub struct PedersenHash {
 }
 
 impl PedersenHash {
-    pub fn init_digest_to(digest: Vec<u8>) -> Self {
-        PedersenHash {
-            state: bytes_to_field(&digest),
-        }
+    pub fn init_digest_to(digest: Vec<u8>) -> Result<Self, anyhow::Error> {
+        let state = bytes_to_field(&digest)?;
+        Ok(PedersenHash { state })
     }
 
     pub fn get_digest(&self) -> Vec<u8> {
@@ -19,46 +18,45 @@ impl PedersenHash {
     }
 
     pub fn hash(val0: PedersenHash, val1: PedersenHash) -> PedersenHash {
-        let cntx = get_standard_pedersen_hash_context();
+        let cntx = PedersenHashContext::default();
         let res = cntx.hash_elements(val0.state, val1.state);
         PedersenHash { state: res }
     }
 
-    pub fn hash_bytes_with_length(bytes: Vec<u8>) -> PedersenHash {
+    pub fn hash_bytes_with_length(bytes: Vec<u8>) -> Result<PedersenHash, anyhow::Error> {
+        assert!(
+            bytes.len() % PEDERSEN_CHUNK_SIZE == 0,
+            "Pedersen hash currently does not support partial blocks."
+        );
         let mut state = Felt252::ZERO;
-        let cntx = get_standard_pedersen_hash_context();
+        let cntx = PedersenHashContext::default();
         let modulus = BigUint::from_bytes_be(&Felt252::MODULUS.to_bytes_be());
 
         let mut bytes_to_hash = bytes.len();
         let mut offset = 0;
 
-        while bytes_to_hash >= 32 {
-            let word = BigUint::from_bytes_be(&bytes[offset..offset + 32]);
+        while bytes_to_hash >= PEDERSEN_CHUNK_SIZE {
+            let word = BigUint::from_bytes_be(&bytes[offset..offset + PEDERSEN_CHUNK_SIZE]);
             let q = word.clone() / modulus.clone();
             let r = word % modulus.clone();
-            let value = bytes_to_field(&r.to_bytes_be());
+            let value = bytes_to_field(&r.to_bytes_be())?;
             assert!(q < BigUint::from(1000u64), "Unexpectedly large shift.");
-            let shift = bytes_to_field(&q.to_bytes_be());
+            let shift = bytes_to_field(&q.to_bytes_be())?;
 
             state = cntx.hash_elements(state, value) + shift;
 
-            offset += 32;
-            bytes_to_hash -= 32;
+            offset += PEDERSEN_CHUNK_SIZE;
+            bytes_to_hash -= PEDERSEN_CHUNK_SIZE;
         }
 
-        assert!(
-            bytes_to_hash == 0,
-            "Pedersen hash currently does not support partial blocks."
-        );
-        assert!(bytes.len() % 32 == 0);
-        let val1 = bytes.len() / 32;
+        let val1 = bytes.len() / PEDERSEN_CHUNK_SIZE;
         state = cntx.hash_elements(state, Felt252::from(val1 as i64));
 
-        PedersenHash { state }
+        Ok(PedersenHash { state })
     }
 }
 
-fn bytes_to_field(bytes: &[u8]) -> Felt252 {
+fn bytes_to_field(bytes: &[u8]) -> Result<Felt252, anyhow::Error> {
     let bits = {
         let mut bits = Vec::new();
         for byte in bytes {
@@ -68,14 +66,24 @@ fn bytes_to_field(bytes: &[u8]) -> Felt252 {
         }
         bits
     };
+    assert!(
+        bits.len() <= 256,
+        "The bit length exceeds the capacity of BigInt with 4 limbs."
+    );
+
     let big_int = <BigInt<4> as BigInteger>::from_bits_be(&bits);
-    assert!(big_int < Felt252::MODULUS);
-    Felt252::from_bigint(big_int).expect("conversion fail")
+
+    if big_int >= Felt252::MODULUS {
+        return Err(anyhow::anyhow!("big_int is larger than the modulus"));
+    }
+
+    Felt252::from_bigint(big_int).ok_or_else(|| anyhow::anyhow!("conversion failed"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::PedersenHash;
+    use crate::constants::PEDERSEN_CHUNK_SIZE;
 
     fn generate_test_vector(length: usize) -> Vec<u8> {
         let mut test_vector = Vec::with_capacity(length);
@@ -95,7 +103,7 @@ mod tests {
     #[test]
     fn test_pedersen_empty() {
         let input = vec![];
-        let res = PedersenHash::hash_bytes_with_length(input);
+        let res = PedersenHash::hash_bytes_with_length(input).unwrap();
         let exp_res =
             felt::hex("0x49ee3eba8c1600700ee1b87eb599f16716b0b1022947733551fde4050ca6804");
         assert_eq!(exp_res, res.state);
@@ -103,14 +111,14 @@ mod tests {
 
     #[test]
     fn test_pedersen() {
-        let input = generate_test_vector(32);
-        let res = PedersenHash::hash_bytes_with_length(input);
+        let input = generate_test_vector(PEDERSEN_CHUNK_SIZE);
+        let res = PedersenHash::hash_bytes_with_length(input).unwrap();
         let exp_res =
             felt::hex("0x76ee717494854a0656535e7ebd851daf6daced15363a94e3c14587187818208");
         assert_eq!(exp_res, res.state);
 
-        let input = generate_test_vector(64);
-        let res = PedersenHash::hash_bytes_with_length(input);
+        let input = generate_test_vector(2 * PEDERSEN_CHUNK_SIZE);
+        let res = PedersenHash::hash_bytes_with_length(input).unwrap();
         let exp_res =
             felt::hex("0x5ae166bb6f7bd5aecc639a736a38257f0913611c4967e6fb1cabd4278790e4c");
         assert_eq!(exp_res, res.state);
