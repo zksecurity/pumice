@@ -1,0 +1,15 @@
+[package]
+name = "composition_polynomial"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+ark-ff = { workspace = true }
+ark-poly ={ workspace = true }
+fri = { path = "../fri" }
+
+[dev-dependencies]
+rand.workspace = true
+num-bigint.workspace = true
+felt = { path = "../felt" }
