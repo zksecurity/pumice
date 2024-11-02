@@ -1,0 +1,16 @@
+[package]
+name = "air"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+ark-ff = { workspace = true }
+ark-poly = { workspace = true }
+felt = { path = "../felt" }
+composition_polynomial = { path = "../composition_polynomial" }
+fri = { path = "../fri" }
+num-bigint = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }

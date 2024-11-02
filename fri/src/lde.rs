@@ -6,6 +6,7 @@ use ark_poly::{
 use crate::stone_domain::change_order_of_elements_in_domain;
 
 #[allow(dead_code)]
+#[derive(Debug, Clone)]
 pub struct MultiplicativeLDE<F: PrimeField> {
     pub ldes: Vec<DensePolynomial<F>>,
     pub base: Radix2EvaluationDomain<F>,
